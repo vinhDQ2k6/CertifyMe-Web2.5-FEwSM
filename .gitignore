@@ -1,0 +1,6 @@
+# Backend (BE)
+backend/
+docs/java/
+
+# Archives
+*.zip
