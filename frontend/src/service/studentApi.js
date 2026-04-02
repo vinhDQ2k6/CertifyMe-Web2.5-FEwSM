@@ -8,6 +8,10 @@ export function getCourseDetail(courseId) {
     return apiRequest(`/api/courses/${courseId}`);
 }
 
+export function getClassQuizzes(classId) {
+    return apiRequest(`/api/classes/${classId}/quizzes`);
+}
+
 export function getQuizDetail(quizId) {
     return apiRequest(`/api/quizzes/${quizId}`);
 }

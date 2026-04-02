@@ -20,9 +20,16 @@ const roleFilterOptions = [
 ];
 const statusFilterOptions = [
     { label: 'All Status', value: '' },
-    { label: 'Active', value: 'active' },
-    { label: 'Inactive', value: 'inactive' }
+    { label: 'Active', value: 'ACTIVE' },
+    { label: 'Inactive', value: 'INACTIVE' }
 ];
+
+function isUserActive(user) {
+    if (typeof user?.isActive === 'boolean') {
+        return user.isActive;
+    }
+    return String(user?.status || '').toUpperCase() === 'ACTIVE';
+}
 
 async function loadUsers() {
     try {
@@ -34,8 +41,25 @@ async function loadUsers() {
             page: 1,
             limit: 50
         });
-        users.value = result?.items || [];
-        pagination.value = result?.pagination || null;
+
+        const mappedUsers = result?.users || result?.items || [];
+        users.value = Array.isArray(mappedUsers) ? mappedUsers : [];
+
+        if (result?.pagination) {
+            pagination.value = result.pagination;
+        } else if (typeof result?.totalCount === 'number') {
+            const pageSize = Number(result?.pageSize) || 50;
+            const page = Number(result?.page) || 1;
+            const total = Number(result.totalCount) || 0;
+            pagination.value = {
+                page,
+                limit: pageSize,
+                total,
+                totalPages: Math.max(1, Math.ceil(total / pageSize))
+            };
+        } else {
+            pagination.value = null;
+        }
     } catch (error) {
         errorMessage.value = getApiErrorMessage(error, 'Khong tai duoc danh sach user.');
     } finally {
@@ -47,9 +71,10 @@ async function toggleStatus(user) {
     try {
         updating.value = true;
         errorMessage.value = '';
+        const active = isUserActive(user);
         await updateAdminUserStatus(user.userId, {
-            isActive: !user.isActive,
-            reason: user.isActive ? 'Disabled by admin' : 'Enabled by admin'
+            isActive: !active,
+            reason: active ? 'Disabled by admin' : 'Enabled by admin'
         });
         successMessage.value = 'Cap nhat trang thai user thanh cong.';
         await loadUsers();
@@ -98,6 +123,7 @@ onMounted(() => {
         <Message v-if="successMessage" severity="success" class="mb-3">{{ successMessage }}</Message>
 
         <DataTable :value="users" :loading="loading" responsiveLayout="scroll">
+            <Column field="userCode" header="Code"></Column>
             <Column field="fullName" header="Name"></Column>
             <Column field="email" header="Email"></Column>
             <Column header="Role">
@@ -107,14 +133,20 @@ onMounted(() => {
             </Column>
             <Column header="Status">
                 <template #body="slotProps">
-                    <Tag :value="slotProps.data.isActive ? 'Active' : 'Inactive'" :severity="slotProps.data.isActive ? 'success' : 'danger'" />
+                    <Tag :value="isUserActive(slotProps.data) ? 'Active' : 'Inactive'" :severity="isUserActive(slotProps.data) ? 'success' : 'danger'" />
                 </template>
             </Column>
             <Column field="createdAt" header="Created At"></Column>
             <Column field="lastLoginAt" header="Last Login"></Column>
             <Column header="Action">
                 <template #body="slotProps">
-                    <Button :label="slotProps.data.isActive ? 'Disable' : 'Enable'" :severity="slotProps.data.isActive ? 'danger' : 'success'" text :loading="updating" @click="toggleStatus(slotProps.data)" />
+                    <Button
+                        :label="isUserActive(slotProps.data) ? 'Disable' : 'Enable'"
+                        :severity="isUserActive(slotProps.data) ? 'danger' : 'success'"
+                        text
+                        :loading="updating"
+                        @click="toggleStatus(slotProps.data)"
+                    />
                 </template>
             </Column>
         </DataTable>

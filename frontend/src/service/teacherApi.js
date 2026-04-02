@@ -22,6 +22,15 @@ export function getClassStudents(classId, params = {}) {
     });
 }
 
+export function searchStudents(keyword) {
+    return apiRequest('/api/users/search/students', {
+        query: {
+            q: keyword
+        },
+        keepEmptyQueryKeys: ['q']
+    });
+}
+
 export function createClass(payload) {
     return apiRequest('/api/classes', {
         method: 'POST',

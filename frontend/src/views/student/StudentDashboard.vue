@@ -11,15 +11,21 @@ const errorMessage = ref('');
 const normalizedCourses = computed(() => {
     const source = Array.isArray(courses.value) ? courses.value : [];
     return source.map((course) => ({
+        primaryClass: Array.isArray(course.classes) ? course.classes[0] || null : null,
         courseId: course.courseId,
         courseCode: course.courseCode || '-',
         courseName: course.courseName || 'Untitled Course',
         teacherName: course.teacherName || '-',
-        progress: Number(course.progress ?? 0),
-        totalQuizzes: Number(course.totalQuizzes ?? 0),
-        completedQuizzes: Number(course.completedQuizzes ?? 0),
+        progress: Number(course.progress ?? (Array.isArray(course.classes) ? course.classes[0]?.progress : 0) ?? 0),
+        totalQuizzes: Number(course.totalQuizzes ?? (Array.isArray(course.classes) ? course.classes[0]?.totalQuizzes : 0) ?? 0),
+        completedQuizzes: Number(course.completedQuizzes ?? (Array.isArray(course.classes) ? course.classes[0]?.completedQuizzes : 0) ?? 0),
         averageScore: course.averageScore ?? '-',
-        isCompleted: Boolean(course.isCompleted)
+        isCompleted:
+            typeof course.isCompleted === 'boolean'
+                ? course.isCompleted
+                : String(Array.isArray(course.classes) ? course.classes[0]?.status || '' : '')
+                      .toUpperCase()
+                      .includes('PASS')
     }));
 });
 

@@ -1,6 +1,6 @@
 <script setup>
 import { getApiErrorMessage } from '@/service/apiClient';
-import { createEnrollment, deleteEnrollment, getClassStudents } from '@/service/teacherApi';
+import { createEnrollment, deleteEnrollment, getClassStudents, searchStudents } from '@/service/teacherApi';
 import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 
@@ -10,14 +10,16 @@ const loading = ref(true);
 const selectedStatus = ref('');
 const sortBy = ref('enrolledAt');
 const orderBy = ref('desc');
-const enrollStudentId = ref('');
-const removeEnrollmentId = ref('');
+const searchKeyword = ref('');
+const searchedStudents = ref([]);
+const selectedStudentId = ref('');
+const searching = ref(false);
 const busy = ref(false);
 const removeBusy = ref(false);
 const errorMessage = ref('');
 const successMessage = ref('');
 
-const normalizedEnrollStudentId = computed(() => (enrollStudentId.value || '').trim().toLowerCase());
+const normalizedSelectedStudentId = computed(() => (selectedStudentId.value || '').trim().toLowerCase());
 const existingStudentIdSet = computed(() => {
     const set = new Set();
     for (const student of students.value || []) {
@@ -28,10 +30,21 @@ const existingStudentIdSet = computed(() => {
     return set;
 });
 const isDuplicateEnrollment = computed(() => {
-    if (!normalizedEnrollStudentId.value) {
+    if (!normalizedSelectedStudentId.value) {
         return false;
     }
-    return existingStudentIdSet.value.has(normalizedEnrollStudentId.value);
+    return existingStudentIdSet.value.has(normalizedSelectedStudentId.value);
+});
+
+const studentSearchOptions = computed(() => {
+    return (searchedStudents.value || []).map((student) => ({
+        ...student,
+        optionLabel: `${student.userCode || student.userId} - ${student.fullName || student.email || 'Unknown'}`
+    }));
+});
+
+const selectedStudent = computed(() => {
+    return (searchedStudents.value || []).find((student) => student.userId === selectedStudentId.value) || null;
 });
 
 async function loadStudents() {
@@ -53,9 +66,36 @@ onMounted(async () => {
     await loadStudents();
 });
 
+async function onSearchStudents() {
+    const keyword = (searchKeyword.value || '').trim();
+    if (keyword.length < 2) {
+        searchedStudents.value = [];
+        selectedStudentId.value = '';
+        errorMessage.value = 'Nhap it nhat 2 ky tu de tim hoc vien.';
+        return;
+    }
+
+    try {
+        searching.value = true;
+        errorMessage.value = '';
+        const result = await searchStudents(keyword);
+        searchedStudents.value = Array.isArray(result) ? result : [];
+        selectedStudentId.value = '';
+        if (!searchedStudents.value.length) {
+            successMessage.value = '';
+            errorMessage.value = 'Khong tim thay hoc vien phu hop.';
+        }
+    } catch (error) {
+        errorMessage.value = getApiErrorMessage(error, 'Tim hoc vien that bai.');
+    } finally {
+        searching.value = false;
+    }
+}
+
 async function onAddEnrollment() {
-    const studentId = (enrollStudentId.value || '').trim();
+    const studentId = (selectedStudentId.value || '').trim();
     if (!studentId) {
+        errorMessage.value = 'Vui long chon hoc vien tu ket qua tim kiem.';
         return;
     }
 
@@ -73,7 +113,9 @@ async function onAddEnrollment() {
             classId: route.params.classId
         });
         successMessage.value = 'Them enrollment thanh cong.';
-        enrollStudentId.value = '';
+        selectedStudentId.value = '';
+        searchKeyword.value = '';
+        searchedStudents.value = [];
         await loadStudents();
     } catch (error) {
         errorMessage.value = getApiErrorMessage(error, 'Them enrollment that bai.');
@@ -83,6 +125,11 @@ async function onAddEnrollment() {
 }
 
 async function onRemoveEnrollment(enrollmentId) {
+    if (!enrollmentId) {
+        errorMessage.value = 'Thieu enrollmentId tu API. Khong the xoa tren dong nay.';
+        return;
+    }
+
     const parsedEnrollmentId = Number(enrollmentId);
     if (!Number.isInteger(parsedEnrollmentId) || parsedEnrollmentId <= 0) {
         errorMessage.value = 'Enrollment ID khong hop le de xoa.';
@@ -95,7 +142,6 @@ async function onRemoveEnrollment(enrollmentId) {
         successMessage.value = '';
         await deleteEnrollment(parsedEnrollmentId);
         successMessage.value = 'Xoa enrollment thanh cong.';
-        removeEnrollmentId.value = '';
         await loadStudents();
     } catch (error) {
         errorMessage.value = getApiErrorMessage(error, 'Xoa enrollment that bai.');
@@ -106,16 +152,14 @@ async function onRemoveEnrollment(enrollmentId) {
 
 const statusOptions = [
     { label: 'All', value: '' },
-    { label: 'Learning', value: 'learning' },
-    { label: 'Passed', value: 'passed' },
-    { label: 'Failed', value: 'failed' },
-    { label: 'Dropped', value: 'dropped' }
+    { label: 'Learning', value: 'LEARNING' },
+    { label: 'Passed', value: 'PASSED' }
 ];
 
 const sortOptions = [
-    { label: 'Enrolled At', value: 'enrolledAt' },
-    { label: 'Average Score', value: 'averageScore' },
-    { label: 'Full Name', value: 'fullName' }
+    { label: 'Name', value: 'name' },
+    { label: 'Score', value: 'score' },
+    { label: 'Date', value: 'date' }
 ];
 
 const orderOptions = [
@@ -124,16 +168,17 @@ const orderOptions = [
 ];
 
 function getEnrollmentStatusSeverity(status) {
-    if (status === 'passed') {
+    const normalized = String(status || '').toLowerCase();
+    if (normalized === 'passed') {
         return 'success';
     }
-    if (status === 'learning') {
+    if (normalized === 'learning') {
         return 'info';
     }
-    if (status === 'failed') {
+    if (normalized === 'failed') {
         return 'warn';
     }
-    if (status === 'dropped') {
+    if (normalized === 'dropped') {
         return 'danger';
     }
     return 'secondary';
@@ -174,14 +219,14 @@ function getEnrollmentStatusSeverity(status) {
             <Column header="Action">
                 <template #body="slotProps">
                     <Button
-                        v-if="slotProps.data.enrollmentId"
                         label="Remove"
                         severity="danger"
                         size="small"
+                        :disabled="!slotProps.data.enrollmentId"
+                        :title="slotProps.data.enrollmentId ? 'Remove enrollment' : 'Missing enrollmentId from API'"
                         :loading="removeBusy"
                         @click="onRemoveEnrollment(slotProps.data.enrollmentId)"
                     />
-                    <span v-else class="text-color-secondary text-sm">N/A</span>
                 </template>
             </Column>
         </DataTable>
@@ -189,35 +234,35 @@ function getEnrollmentStatusSeverity(status) {
         <div class="mt-4">
             <h4 class="font-semibold">Add Enrollment</h4>
             <div class="grid grid-cols-12 gap-3">
-                <div class="col-span-12 md:col-span-5">
-                    <InputText v-model="enrollStudentId" class="w-full" placeholder="Student ID" />
+                <div class="col-span-12 md:col-span-4">
+                    <InputText v-model="searchKeyword" class="w-full" placeholder="Search student by code, name, email" @keyup.enter="onSearchStudents" />
                 </div>
-                <div class="col-span-12 md:col-span-5">
-                    <InputText class="w-full" :value="route.params.classId" disabled />
+                <div class="col-span-12 md:col-span-3">
+                    <Button label="Search" class="w-full" :loading="searching" @click="onSearchStudents" />
                 </div>
-                <div class="col-span-12 md:col-span-2">
-                    <Button label="Add" class="w-full" :loading="busy" :disabled="isDuplicateEnrollment" @click="onAddEnrollment" />
-                </div>
-            </div>
-            <small v-if="isDuplicateEnrollment" class="text-orange-500">Student ID da co trong lop, khong the them lai.</small>
-        </div>
-
-        <div class="mt-4">
-            <h4 class="font-semibold">Remove Enrollment by Enrollment ID</h4>
-            <div class="grid grid-cols-12 gap-3">
-                <div class="col-span-12 md:col-span-10">
-                    <InputText v-model="removeEnrollmentId" class="w-full" placeholder="Enrollment ID (so nguyen)" />
-                </div>
-                <div class="col-span-12 md:col-span-2">
-                    <Button
-                        label="Remove"
-                        severity="danger"
+                <div class="col-span-12 md:col-span-3">
+                    <Select
+                        v-model="selectedStudentId"
                         class="w-full"
-                        :loading="removeBusy"
-                        @click="onRemoveEnrollment(removeEnrollmentId)"
+                        :options="studentSearchOptions"
+                        optionLabel="optionLabel"
+                        optionValue="userId"
+                        placeholder="Select student"
                     />
                 </div>
+                <div class="col-span-12 md:col-span-2">
+                    <InputText class="w-full" :value="route.params.classId" disabled />
+                </div>
             </div>
+            <div class="grid grid-cols-12 gap-3 mt-2">
+                <div class="col-span-12 md:col-span-3 md:col-start-10">
+                    <Button label="Add" class="w-full" :loading="busy" :disabled="!selectedStudentId || isDuplicateEnrollment" @click="onAddEnrollment" />
+                </div>
+            </div>
+            <small v-if="selectedStudent && !isDuplicateEnrollment" class="text-color-secondary">
+                Selected: {{ selectedStudent.fullName }} ({{ selectedStudent.userCode || selectedStudent.userId }})
+            </small>
+            <small v-if="isDuplicateEnrollment" class="text-orange-500">Hoc vien da co trong lop, khong the them lai.</small>
         </div>
     </div>
 </template>

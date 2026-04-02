@@ -1,34 +1,115 @@
 <script setup>
 import { getApiErrorMessage } from '@/service/apiClient';
-import { getCourseDetail } from '@/service/studentApi';
-import { computed, onMounted, ref } from 'vue';
+import { getClassQuizzes, getCourseDetail } from '@/service/studentApi';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 const route = useRoute();
 const loading = ref(true);
 const course = ref(null);
 const errorMessage = ref('');
+const classQuizzes = ref([]);
+const classQuizzesLoaded = ref(false);
+const quizListLoading = ref(false);
+const selectedClassId = ref('');
+const detailDialogVisible = ref(false);
+const detailTitle = ref('');
+const detailValue = ref('');
+
+function shortenMiddle(value, head = 10, tail = 8) {
+    const text = value == null ? '' : String(value);
+    if (!text) {
+        return '-';
+    }
+    if (text.length <= head + tail + 3) {
+        return text;
+    }
+    return `${text.slice(0, head)}...${text.slice(-tail)}`;
+}
+
+function openDetail(title, value) {
+    detailTitle.value = title;
+    detailValue.value = value == null || value === '' ? '-' : String(value);
+    detailDialogVisible.value = true;
+}
 
 const normalizedQuizzes = computed(() => {
-    const source = Array.isArray(course.value?.quizzes) ? course.value.quizzes : [];
+    const source = classQuizzesLoaded.value ? classQuizzes.value : Array.isArray(course.value?.quizzes) ? course.value.quizzes : [];
 
     return source.map((quiz) => ({
         quizId: quiz.quizId || quiz.id || '',
-        quizName: quiz.quizName || quiz.name || '',
-        duration: quiz.duration,
+        quizName: quiz.title || quiz.quizName || quiz.name || '',
+        duration: Number(quiz.timeLimit ?? quiz.duration ?? 0),
         passingScore: quiz.passingScore,
         score: quiz.score,
         maxScore: quiz.maxScore,
-        status: quiz.status || 'pending'
+        status: normalizeQuizStatus(quiz.studentStatus || quiz.status)
     }));
 });
 
+const classOptions = computed(() => {
+    const source = Array.isArray(course.value?.classes) ? course.value.classes : [];
+    return source
+        .filter((item) => item?.classId)
+        .map((item) => ({
+            classId: item.classId,
+            className: item.className || item.classCode || item.classId,
+            progress: Number(item.progress ?? 0),
+            status: item.status || ''
+        }));
+});
+
+const selectedClassSummary = computed(() => {
+    return classOptions.value.find((item) => item.classId === selectedClassId.value) || null;
+});
+
+const courseProgress = computed(() => {
+    if (selectedClassSummary.value) {
+        return selectedClassSummary.value.progress;
+    }
+    return Number(course.value?.progress ?? 0);
+});
+
+function normalizeQuizStatus(status) {
+    const normalizedUpper = String(status || '')
+        .trim()
+        .toUpperCase();
+
+    if (['NOT_STARTED', 'ATTEMPTED', 'PASSED', 'FAILED', 'LOCKED'].includes(normalizedUpper)) {
+        return normalizedUpper;
+    }
+
+    const normalizedLower = String(status || '')
+        .trim()
+        .toLowerCase();
+
+    if (normalizedLower === 'completed') {
+        return 'PASSED';
+    }
+    if (normalizedLower === 'pending') {
+        return 'NOT_STARTED';
+    }
+    if (normalizedLower === 'attempted') {
+        return 'ATTEMPTED';
+    }
+    if (normalizedLower === 'locked') {
+        return 'LOCKED';
+    }
+    if (normalizedLower === 'failed') {
+        return 'FAILED';
+    }
+    return 'NOT_STARTED';
+}
+
 function getQuizStatusSeverity(status) {
-    if (status === 'completed') {
+    if (status === 'PASSED') {
         return 'success';
     }
-    if (status === 'locked') {
+    if (status === 'FAILED' || status === 'LOCKED') {
         return 'danger';
+    }
+    if (status === 'ATTEMPTED') {
+        return 'info';
     }
     return 'warn';
 }
@@ -43,7 +124,7 @@ function getQuizAction(quiz) {
         };
     }
 
-    if (quiz.status === 'completed') {
+    if (quiz.status === 'PASSED') {
         return {
             label: 'View Result',
             to: `/student/quiz/${quiz.quizId}/result`,
@@ -52,7 +133,7 @@ function getQuizAction(quiz) {
         };
     }
 
-    if (quiz.status === 'locked') {
+    if (quiz.status === 'LOCKED') {
         return {
             label: 'Locked',
             to: null,
@@ -71,14 +152,45 @@ function getQuizAction(quiz) {
 
 const certificateInfo = computed(() => course.value?.certificate || null);
 
+async function loadClassQuizzes(classId) {
+    if (!classId) {
+        classQuizzes.value = [];
+        classQuizzesLoaded.value = false;
+        return;
+    }
+
+    quizListLoading.value = true;
+    try {
+        const result = await getClassQuizzes(classId);
+        classQuizzes.value = Array.isArray(result) ? result : [];
+        classQuizzesLoaded.value = true;
+    } catch (_error) {
+        classQuizzes.value = [];
+        classQuizzesLoaded.value = false;
+    } finally {
+        quizListLoading.value = false;
+    }
+}
+
 onMounted(async () => {
     try {
         course.value = await getCourseDetail(route.params.courseId);
+        selectedClassId.value = classOptions.value[0]?.classId || '';
+        if (selectedClassId.value) {
+            await loadClassQuizzes(selectedClassId.value);
+        }
     } catch (error) {
         errorMessage.value = getApiErrorMessage(error, 'Khong tai duoc chi tiet khoa hoc.');
     } finally {
         loading.value = false;
     }
+});
+
+watch(selectedClassId, async (newClassId, oldClassId) => {
+    if (!newClassId || newClassId === oldClassId) {
+        return;
+    }
+    await loadClassQuizzes(newClassId);
 });
 </script>
 
@@ -98,8 +210,8 @@ onMounted(async () => {
                     <div class="text-sm text-color-secondary">{{ course.courseCode }}</div>
                     <h2 class="text-2xl font-semibold mt-1 mb-2">{{ course.courseName }}</h2>
                     <p class="text-color-secondary">Giang vien: {{ course.teacherName }}</p>
-                    <ProgressBar :value="course.progress || 0" class="mb-2" />
-                    <div class="text-sm text-color-secondary">Tien do: {{ course.progress || 0 }}%</div>
+                    <ProgressBar :value="courseProgress" class="mb-2" />
+                    <div class="text-sm text-color-secondary">Tien do: {{ courseProgress }}%</div>
                     <div class="text-sm text-color-secondary mt-2">
                         Quiz hoan thanh: {{ course.completedQuizzes || 0 }}/{{ course.totalQuizzes || 0 }}
                     </div>
@@ -107,7 +219,21 @@ onMounted(async () => {
                 </div>
 
                 <div class="card mt-4">
-                    <h3 class="text-xl font-semibold mb-3">Quiz List</h3>
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                        <h3 class="text-xl font-semibold m-0">Quiz List</h3>
+                        <Select
+                            v-if="classOptions.length"
+                            v-model="selectedClassId"
+                            :options="classOptions"
+                            optionLabel="className"
+                            optionValue="classId"
+                            placeholder="Chon class"
+                            class="w-full md:w-18rem"
+                        />
+                    </div>
+                    <div v-if="quizListLoading" class="text-sm text-color-secondary mb-3">
+                        <i class="pi pi-spin pi-spinner mr-2"></i>Dang tai danh sach quiz theo class...
+                    </div>
                     <DataTable :value="normalizedQuizzes" responsiveLayout="scroll">
                         <Column field="quizName" header="Quiz"></Column>
                         <Column header="Score">
@@ -143,20 +269,36 @@ onMounted(async () => {
                 <div class="card">
                     <h3 class="text-xl font-semibold mb-3">Certificate Summary</h3>
                     <div v-if="certificateInfo">
-                        <div class="flex justify-between mb-2">
+                        <div class="flex justify-between items-center gap-2 mb-2 min-w-0">
                             <span>Verification Hash</span>
-                            <strong>{{ certificateInfo.verificationHash || '-' }}</strong>
+                            <div class="flex items-center gap-2 min-w-0">
+                                <strong class="truncate">{{ shortenMiddle(certificateInfo.verificationHash || '-') }}</strong>
+                                <Button icon="pi pi-eye" size="small" text rounded @click="openDetail('Verification Hash', certificateInfo.verificationHash || '-')" />
+                            </div>
                         </div>
                         <div class="text-sm text-color-secondary">Blockchain Info</div>
-                        <div class="text-sm mt-1">Hash: {{ certificateInfo.blockchainInfo?.hash || '-' }}</div>
+                        <div class="text-sm mt-1 flex items-center gap-2 min-w-0">
+                            <span>Hash: {{ shortenMiddle(certificateInfo.blockchainInfo?.hash || '-') }}</span>
+                            <Button icon="pi pi-eye" size="small" text rounded @click="openDetail('Blockchain Hash', certificateInfo.blockchainInfo?.hash || '-')" />
+                        </div>
                         <div class="text-sm">Block: {{ certificateInfo.blockchainInfo?.block || '-' }}</div>
-                        <div class="text-sm">Tx: {{ certificateInfo.blockchainInfo?.txHash || '-' }}</div>
-                        <div class="text-sm mb-4">Contract: {{ certificateInfo.blockchainInfo?.contract || '-' }}</div>
+                        <div class="text-sm flex items-center gap-2 min-w-0">
+                            <span>Tx: {{ shortenMiddle(certificateInfo.blockchainInfo?.txHash || '-') }}</span>
+                            <Button icon="pi pi-eye" size="small" text rounded @click="openDetail('Transaction Hash', certificateInfo.blockchainInfo?.txHash || '-')" />
+                        </div>
+                        <div class="text-sm mb-4 flex items-center gap-2 min-w-0">
+                            <span>Contract: {{ shortenMiddle(certificateInfo.blockchainInfo?.contract || '-') }}</span>
+                            <Button icon="pi pi-eye" size="small" text rounded @click="openDetail('Contract Address', certificateInfo.blockchainInfo?.contract || '-')" />
+                        </div>
                     </div>
                     <div class="text-color-secondary mb-4" v-else>Chua du dieu kien hoac chua co chung chi.</div>
                     <Button label="My Certificates" class="w-full" severity="secondary" as="router-link" to="/student/certificates" />
                 </div>
             </div>
+
+            <Dialog v-model:visible="detailDialogVisible" modal :header="detailTitle" :style="{ width: '70vw', maxWidth: '980px' }">
+                <div class="text-sm break-all">{{ detailValue }}</div>
+            </Dialog>
         </template>
 
         <div class="col-span-12" v-else>

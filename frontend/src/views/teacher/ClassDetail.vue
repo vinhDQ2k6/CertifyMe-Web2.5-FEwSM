@@ -19,13 +19,14 @@ const form = ref({
 });
 
 function getClassStatusSeverity(status) {
-    if (status === 'active') {
+    const normalized = String(status || '').toLowerCase();
+    if (normalized === 'active') {
         return 'success';
     }
-    if (status === 'completed') {
+    if (normalized === 'completed') {
         return 'info';
     }
-    if (status === 'canceled') {
+    if (normalized === 'canceled') {
         return 'danger';
     }
     return 'secondary';

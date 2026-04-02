@@ -9,6 +9,26 @@ const route = useRoute();
 const loading = ref(true);
 const cert = ref(null);
 const errorMessage = ref('');
+const detailDialogVisible = ref(false);
+const detailTitle = ref('');
+const detailValue = ref('');
+
+function shortenMiddle(value, head = 10, tail = 8) {
+    const text = value == null ? '' : String(value);
+    if (!text) {
+        return '-';
+    }
+    if (text.length <= head + tail + 3) {
+        return text;
+    }
+    return `${text.slice(0, head)}...${text.slice(-tail)}`;
+}
+
+function openDetail(title, value) {
+    detailTitle.value = title;
+    detailValue.value = value == null || value === '' ? '-' : String(value);
+    detailDialogVisible.value = true;
+}
 
 onMounted(async () => {
     try {
@@ -46,7 +66,11 @@ onMounted(async () => {
                     <div class="col-span-12 md:col-span-6"><strong>Course:</strong> {{ cert.courseName }}</div>
                     <div class="col-span-12 md:col-span-6"><strong>Course Code:</strong> {{ cert.courseCode }}</div>
                     <div class="col-span-12 md:col-span-6"><strong>Issued At:</strong> {{ cert.issuedAt || 'Not issued yet' }}</div>
-                    <div class="col-span-12 md:col-span-6"><strong>Verification Hash:</strong> {{ cert.verificationHash || 'N/A' }}</div>
+                    <div class="col-span-12 md:col-span-6 flex items-center gap-2 min-w-0">
+                        <strong>Verification Hash:</strong>
+                        <span class="truncate">{{ shortenMiddle(cert.verificationHash || 'N/A') }}</span>
+                        <Button icon="pi pi-eye" size="small" text rounded @click="openDetail('Verification Hash', cert.verificationHash || 'N/A')" />
+                    </div>
                 </div>
 
                 <Divider />
@@ -68,9 +92,17 @@ onMounted(async () => {
             <div class="card">
                 <h4 class="font-semibold mb-3">Blockchain Info</h4>
                 <div v-if="cert.blockchainInfo" class="text-sm">
-                    <div class="mb-2"><strong>Tx Hash:</strong> {{ cert.blockchainInfo.txHash }}</div>
+                    <div class="mb-2 flex items-center gap-2 min-w-0">
+                        <strong>Tx Hash:</strong>
+                        <span class="truncate">{{ shortenMiddle(cert.blockchainInfo.txHash) }}</span>
+                        <Button icon="pi pi-eye" size="small" text rounded @click="openDetail('Transaction Hash', cert.blockchainInfo.txHash)" />
+                    </div>
                     <div class="mb-2"><strong>Block:</strong> {{ cert.blockchainInfo.block }}</div>
-                    <div><strong>Contract:</strong> {{ cert.blockchainInfo.contract }}</div>
+                    <div class="flex items-center gap-2 min-w-0">
+                        <strong>Contract:</strong>
+                        <span class="truncate">{{ shortenMiddle(cert.blockchainInfo.contract) }}</span>
+                        <Button icon="pi pi-eye" size="small" text rounded @click="openDetail('Contract Address', cert.blockchainInfo.contract)" />
+                    </div>
                 </div>
                 <div v-else class="text-color-secondary">No blockchain data.</div>
             </div>
@@ -79,6 +111,10 @@ onMounted(async () => {
                 <Button label="Back to My Certificates" as="router-link" to="/student/certificates" severity="secondary" class="w-full" />
             </div>
         </div>
+
+        <Dialog v-model:visible="detailDialogVisible" modal :header="detailTitle" :style="{ width: '70vw', maxWidth: '980px' }">
+            <div class="text-sm break-all">{{ detailValue }}</div>
+        </Dialog>
     </div>
 
     <div class="card text-center text-color-secondary" v-else>Khong tim thay certificate.</div>

@@ -9,6 +9,23 @@ const submissions = ref([]);
 const loading = ref(true);
 const errorMessage = ref('');
 
+function isSubmissionPassed(row) {
+    if (typeof row?.passed === 'boolean') {
+        return row.passed;
+    }
+
+    const normalizedStatus = String(row?.status || '').trim().toLowerCase();
+    return normalizedStatus === 'passed';
+}
+
+function getSubmissionLabel(row) {
+    return isSubmissionPassed(row) ? 'PASSED' : 'FAILED';
+}
+
+function getSubmissionSeverity(row) {
+    return isSubmissionPassed(row) ? 'success' : 'danger';
+}
+
 onMounted(async () => {
     try {
         submissions.value = await getQuizSubmissions(route.params.quizId);
@@ -37,7 +54,7 @@ onMounted(async () => {
             </Column>
             <Column header="Result">
                 <template #body="slotProps">
-                    <Tag :value="slotProps.data.passed ? 'PASSED' : 'FAILED'" :severity="slotProps.data.passed ? 'success' : 'danger'" />
+                    <Tag :value="getSubmissionLabel(slotProps.data)" :severity="getSubmissionSeverity(slotProps.data)" />
                 </template>
             </Column>
             <Column field="submittedAt" header="Submitted At"></Column>

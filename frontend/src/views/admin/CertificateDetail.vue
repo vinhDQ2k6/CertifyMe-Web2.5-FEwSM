@@ -1,5 +1,4 @@
 <script setup>
-import { resolveSessionUser } from '@/mock/auth';
 import { getApiErrorMessage } from '@/service/apiClient';
 import { getCertificateDetail, revokeCertificate, verifyCertificate } from '@/service/adminApi';
 import { onMounted, ref } from 'vue';
@@ -14,12 +13,33 @@ const errorMessage = ref('');
 const actionMessage = ref('');
 const revokeReason = ref('Academic integrity violation');
 const verifyResult = ref(null);
+const detailDialogVisible = ref(false);
+const detailTitle = ref('');
+const detailValue = ref('');
+
+function shortenMiddle(value, head = 10, tail = 8) {
+    const text = value == null ? '' : String(value);
+    if (!text) {
+        return '-';
+    }
+    if (text.length <= head + tail + 3) {
+        return text;
+    }
+    return `${text.slice(0, head)}...${text.slice(-tail)}`;
+}
+
+function openDetail(title, value) {
+    detailTitle.value = title;
+    detailValue.value = value == null || value === '' ? '-' : String(value);
+    detailDialogVisible.value = true;
+}
 
 function getStatusSeverity(status) {
-    if (status === 'issued') {
+    const normalized = String(status || '').toLowerCase();
+    if (normalized === 'issued') {
         return 'success';
     }
-    if (status === 'revoked') {
+    if (normalized === 'revoked') {
         return 'danger';
     }
     return 'warn';
@@ -58,20 +78,14 @@ async function onRevoke() {
         return;
     }
 
-    const user = resolveSessionUser();
-    if (!user?.userId) {
-        errorMessage.value = 'Khong tim thay admin session. Vui long dang nhap lai.';
-        return;
-    }
-
     try {
         busy.value = true;
         errorMessage.value = '';
         const result = await revokeCertificate(route.params.certificateId, {
-            reason: revokeReason.value.trim(),
-            revokedBy: user.userId
+            reason: revokeReason.value.trim()
         });
-        actionMessage.value = `Revoked: ${result.reason}`;
+        const status = String(result?.status || '').toLowerCase();
+        actionMessage.value = status === 'revoked' ? 'Revoke thanh cong.' : 'Da gui yeu cau revoke thanh cong.';
         await loadCertificateDetail();
     } catch (error) {
         errorMessage.value = getApiErrorMessage(error, 'Revoke chung chi that bai.');
@@ -121,8 +135,18 @@ async function onRevoke() {
                 <Button label="Verify" severity="success" class="w-full" :loading="verifyBusy" @click="onVerify" />
                 <div v-if="verifyResult" class="text-sm mt-3">
                     <div class="mb-1"><strong>Valid:</strong> {{ verifyResult.isValid ? 'Yes' : 'No' }}</div>
-                    <div class="mb-1"><strong>Verified At:</strong> {{ verifyResult.verifiedAt || '-' }}</div>
-                    <div><strong>Hash:</strong> {{ verifyResult.verificationHash || '-' }}</div>
+                    <div class="mb-1"><strong>Verified At:</strong> {{ verifyResult.blockchainVerificationDate || verifyResult.verifiedAt || '-' }}</div>
+                    <div class="flex items-center gap-2 min-w-0">
+                        <strong>Hash:</strong>
+                        <span class="truncate">{{ shortenMiddle(verifyResult.verificationHash) }}</span>
+                        <Button
+                            icon="pi pi-eye"
+                            size="small"
+                            text
+                            rounded
+                            @click="openDetail('Verification Hash', verifyResult.verificationHash)"
+                        />
+                    </div>
                 </div>
             </div>
 
@@ -136,14 +160,26 @@ async function onRevoke() {
             <div class="card mt-4">
                 <h4 class="font-semibold mb-3">Blockchain Info</h4>
                 <div v-if="cert.blockchainInfo" class="text-sm">
-                    <div class="mb-2"><strong>Tx:</strong> {{ cert.blockchainInfo.transactionHash }}</div>
+                    <div class="mb-2 flex items-center gap-2 min-w-0">
+                        <strong>Tx:</strong>
+                        <span class="truncate">{{ shortenMiddle(cert.blockchainInfo.transactionHash) }}</span>
+                        <Button icon="pi pi-eye" size="small" text rounded @click="openDetail('Transaction Hash', cert.blockchainInfo.transactionHash)" />
+                    </div>
                     <div class="mb-2"><strong>Block:</strong> {{ cert.blockchainInfo.blockNumber }}</div>
-                    <div class="mb-2"><strong>Contract:</strong> {{ cert.blockchainInfo.contractAddress }}</div>
+                    <div class="mb-2 flex items-center gap-2 min-w-0">
+                        <strong>Contract:</strong>
+                        <span class="truncate">{{ shortenMiddle(cert.blockchainInfo.contractAddress) }}</span>
+                        <Button icon="pi pi-eye" size="small" text rounded @click="openDetail('Contract Address', cert.blockchainInfo.contractAddress)" />
+                    </div>
                     <div><strong>Network:</strong> {{ cert.blockchainInfo.networkName }}</div>
                 </div>
                 <div v-else class="text-color-secondary">No blockchain data.</div>
             </div>
         </div>
+
+        <Dialog v-model:visible="detailDialogVisible" modal :header="detailTitle" :style="{ width: '70vw', maxWidth: '980px' }">
+            <div class="text-sm break-all">{{ detailValue }}</div>
+        </Dialog>
     </div>
 
     <div class="card text-center text-color-secondary" v-else>Khong tim thay certificate.</div>

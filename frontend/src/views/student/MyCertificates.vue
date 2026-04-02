@@ -7,6 +7,26 @@ import { onMounted, ref } from 'vue';
 const loading = ref(true);
 const certificates = ref([]);
 const errorMessage = ref('');
+const detailDialogVisible = ref(false);
+const detailTitle = ref('');
+const detailValue = ref('');
+
+function shortenMiddle(value, head = 10, tail = 8) {
+    const text = value == null ? '' : String(value);
+    if (!text) {
+        return '-';
+    }
+    if (text.length <= head + tail + 3) {
+        return text;
+    }
+    return `${text.slice(0, head)}...${text.slice(-tail)}`;
+}
+
+function openDetail(title, value) {
+    detailTitle.value = title;
+    detailValue.value = value == null || value === '' ? '-' : String(value);
+    detailDialogVisible.value = true;
+}
 
 onMounted(async () => {
     try {
@@ -47,7 +67,16 @@ onMounted(async () => {
             </Column>
             <Column header="Blockchain">
                 <template #body="slotProps">
-                    <span v-if="slotProps.data.blockchainInfo">{{ slotProps.data.blockchainInfo.txHash }}</span>
+                    <div v-if="slotProps.data.blockchainInfo" class="flex items-center gap-2 min-w-0">
+                        <span class="truncate">{{ shortenMiddle(slotProps.data.blockchainInfo.txHash) }}</span>
+                        <Button
+                            icon="pi pi-eye"
+                            size="small"
+                            text
+                            rounded
+                            @click="openDetail('Transaction Hash', slotProps.data.blockchainInfo.txHash)"
+                        />
+                    </div>
                     <span v-else class="text-color-secondary">No on-chain data</span>
                 </template>
             </Column>
@@ -57,5 +86,9 @@ onMounted(async () => {
                 </template>
             </Column>
         </DataTable>
+
+        <Dialog v-model:visible="detailDialogVisible" modal :header="detailTitle" :style="{ width: '70vw', maxWidth: '980px' }">
+            <div class="text-sm break-all">{{ detailValue }}</div>
+        </Dialog>
     </div>
 </template>

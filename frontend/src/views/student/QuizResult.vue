@@ -1,6 +1,7 @@
 <script setup>
 import { getApiErrorMessage } from '@/service/apiClient';
 import { getQuizResult } from '@/service/studentApi';
+import { computed } from 'vue';
 import { onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 
@@ -8,6 +9,9 @@ const route = useRoute();
 const loading = ref(true);
 const result = ref(null);
 const errorMessage = ref('');
+
+const normalizedStatus = computed(() => String(result.value?.status || '').trim().toLowerCase());
+const isPassed = computed(() => normalizedStatus.value === 'passed');
 
 onMounted(async () => {
     try {
@@ -39,7 +43,7 @@ onMounted(async () => {
             <div class="col-span-12 md:col-span-6">
                 <div class="p-4 border surface-border border-round">
                     <div class="text-color-secondary mb-1">Status</div>
-                    <Tag :value="result.status" :severity="result.status === 'PASSED' ? 'success' : 'danger'" />
+                    <Tag :value="result.status" :severity="isPassed ? 'success' : 'danger'" />
                 </div>
             </div>
         </div>
@@ -50,6 +54,7 @@ onMounted(async () => {
         <div class="text-color-secondary mt-2">Submitted at: {{ result.submittedAt }}</div>
 
         <div class="mt-4 flex gap-2">
+            <Button label="Retry Quiz" severity="contrast" as="router-link" :to="`/student/quiz/${route.params.quizId}`" />
             <Button label="Back to Dashboard" as="router-link" to="/student/dashboard" />
             <Button label="My Certificates" severity="secondary" as="router-link" to="/student/certificates" />
         </div>
