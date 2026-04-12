@@ -84,8 +84,12 @@ export function createEnrollment(payload) {
     });
 }
 
-export function deleteEnrollment(enrollmentId) {
-    return apiRequest(`/api/enrollments/${enrollmentId}`, {
-        method: 'DELETE'
+export function deleteEnrollment({ studentCode, classId }) {
+    return apiRequest('/api/enrollments', {
+        method: 'DELETE',
+        query: {
+            studentCode,
+            classId
+        }
     });
 }

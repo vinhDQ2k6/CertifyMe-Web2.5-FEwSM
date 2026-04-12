@@ -2,7 +2,7 @@
 import { resolveSessionUser } from '@/mock/auth';
 import { getApiErrorMessage } from '@/service/apiClient';
 import { getStudentCertificates } from '@/service/studentApi';
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 
 const route = useRoute();
@@ -12,6 +12,11 @@ const errorMessage = ref('');
 const detailDialogVisible = ref(false);
 const detailTitle = ref('');
 const detailValue = ref('');
+const sessionUser = ref(null);
+
+const previewStudentName = computed(() => {
+    return sessionUser.value?.fullName || cert.value?.studentName || 'Student';
+});
 
 function shortenMiddle(value, head = 10, tail = 8) {
     const text = value == null ? '' : String(value);
@@ -33,6 +38,7 @@ function openDetail(title, value) {
 onMounted(async () => {
     try {
         const user = resolveSessionUser();
+        sessionUser.value = user || null;
         if (!user?.userId) {
             throw new Error('Khong tim thay student session. Vui long dang nhap lai.');
         }
@@ -79,7 +85,7 @@ onMounted(async () => {
                     <div class="text-center">
                         <div class="text-xl font-semibold mb-2">Certificate of Completion</div>
                         <div class="text-color-secondary mb-3">This certifies that</div>
-                        <div class="text-2xl font-bold mb-3">Nguyen Bao An</div>
+                        <div class="text-2xl font-bold mb-3">{{ previewStudentName }}</div>
                         <div class="mb-2">has successfully completed</div>
                         <div class="text-xl font-semibold mb-4">{{ cert.courseName }}</div>
                         <div class="text-sm text-color-secondary">Certificate ID: {{ cert.certificateId }}</div>

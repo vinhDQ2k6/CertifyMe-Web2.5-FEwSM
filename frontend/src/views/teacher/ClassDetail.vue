@@ -1,5 +1,6 @@
 <script setup>
 import { getApiErrorMessage } from '@/service/apiClient';
+import { resolveSessionUser } from '@/mock/auth';
 import { getClassDetail, updateClass } from '@/service/teacherApi';
 import { onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
@@ -82,9 +83,13 @@ async function onUpdateClass() {
         successMessage.value = '';
 
         await updateClass(route.params.classId, {
+            courseName: classDetail.value.courseName,
+            courseId: classDetail.value.courseId,
+            teacherId: resolveSessionUser()?.userId || '',
             classCode: form.value.classCode.trim(),
             startDate: form.value.startDate,
-            endDate: form.value.endDate
+            endDate: form.value.endDate,
+            description: classDetail.value.description || ''
         });
 
         classDetail.value = await getClassDetail(route.params.classId);

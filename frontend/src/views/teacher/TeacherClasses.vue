@@ -99,6 +99,7 @@ async function onCreateClass() {
         creating.value = true;
         errorMessage.value = '';
         await createClass({
+            courseName: courses.value.find((item) => item.courseId === form.value.courseId)?.courseName || '',
             classCode: form.value.classCode.trim(),
             courseId: form.value.courseId,
             teacherId: user.userId,

@@ -1,5 +1,6 @@
 <script setup>
 import { getApiErrorMessage } from '@/service/apiClient';
+import { resolveSessionUser } from '@/mock/auth';
 import { getCertificateDetail, revokeCertificate, verifyCertificate } from '@/service/adminApi';
 import { onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
@@ -82,7 +83,8 @@ async function onRevoke() {
         busy.value = true;
         errorMessage.value = '';
         const result = await revokeCertificate(route.params.certificateId, {
-            reason: revokeReason.value.trim()
+            reason: revokeReason.value.trim(),
+            revokedBy: resolveSessionUser()?.email || ''
         });
         const status = String(result?.status || '').toLowerCase();
         actionMessage.value = status === 'revoked' ? 'Revoke thanh cong.' : 'Da gui yeu cau revoke thanh cong.';

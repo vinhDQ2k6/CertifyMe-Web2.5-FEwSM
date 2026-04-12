@@ -35,6 +35,7 @@ function createDefaultForm() {
         quizName: '',
         duration: 30,
         passingScore: 5,
+        maxScore: 10,
         questions: [createDefaultQuestion(1)]
     };
 }
@@ -43,6 +44,7 @@ const form = ref({
     quizName: '',
     duration: 30,
     passingScore: 5,
+    maxScore: 10,
     questions: [createDefaultQuestion(1)]
 });
 
@@ -75,7 +77,8 @@ function mapQuestionForForm(question, index) {
     const optionsFromArray = Array.isArray(question?.options)
         ? question.options.map((opt, optionIndex) => ({
               optionId: opt.optionId || String.fromCharCode(65 + optionIndex),
-              optionText: opt.optionText || ''
+                            optionText: opt.optionText || '',
+                            isCorrect: Boolean(opt.isCorrect)
           }))
         : [];
 
@@ -113,6 +116,7 @@ async function openEditDialog(row) {
             quizName: detail?.quizName || row.quizName || '',
             duration: Number(detail?.duration ?? row.duration ?? 30),
             passingScore: Number(detail?.passingScore ?? row.passingScore ?? 5),
+            maxScore: Number(detail?.maxScore ?? row.maxScore ?? 10),
             questions: questions.length ? questions.map((question, index) => mapQuestionForForm(question, index)) : [createDefaultQuestion(1)]
         };
         quizDialog.value = true;
@@ -139,6 +143,7 @@ function buildQuizPayload() {
         quizName: form.value.quizName.trim(),
         duration: Number(form.value.duration),
         passingScore: Number(form.value.passingScore),
+        maxScore: Number(form.value.maxScore),
         questions: normalizedQuestions
     };
 }
@@ -165,6 +170,10 @@ function validateForm() {
 
     if (!Number.isFinite(Number(form.value.passingScore)) || Number(form.value.passingScore) < 0) {
         return 'Passing score khong hop le.';
+    }
+
+    if (!Number.isFinite(Number(form.value.maxScore)) || Number(form.value.maxScore) <= 0) {
+        return 'Max score phai la so lon hon 0.';
     }
 
     if (!Array.isArray(form.value.questions) || form.value.questions.length === 0) {
@@ -256,6 +265,7 @@ async function onDeleteQuiz(row) {
             <Column field="quizName" header="Quiz"></Column>
             <Column field="duration" header="Duration"></Column>
             <Column field="passingScore" header="Pass Score"></Column>
+            <Column field="maxScore" header="Max Score"></Column>
             <Column field="status" header="Status"></Column>
             <Column header="Actions">
                 <template #body="slotProps">
@@ -291,6 +301,10 @@ async function onDeleteQuiz(row) {
                 <div class="col-span-12 md:col-span-6">
                     <label class="block mb-2">Passing Score</label>
                     <InputText v-model="form.passingScore" type="number" class="w-full" />
+                </div>
+                <div class="col-span-12 md:col-span-6">
+                    <label class="block mb-2">Max Score</label>
+                    <InputText v-model="form.maxScore" type="number" class="w-full" />
                 </div>
 
                 <div class="col-span-12 flex justify-between items-center mt-2">

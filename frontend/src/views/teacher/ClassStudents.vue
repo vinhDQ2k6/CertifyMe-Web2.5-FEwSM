@@ -94,6 +94,7 @@ async function onSearchStudents() {
 
 async function onAddEnrollment() {
     const studentId = (selectedStudentId.value || '').trim();
+    const studentCode = String(selectedStudent.value?.userCode || '').trim();
     if (!studentId) {
         errorMessage.value = 'Vui long chon hoc vien tu ket qua tim kiem.';
         return;
@@ -108,10 +109,17 @@ async function onAddEnrollment() {
         busy.value = true;
         errorMessage.value = '';
         successMessage.value = '';
-        await createEnrollment({
-            studentId,
-            classId: route.params.classId
-        });
+        await createEnrollment(
+            studentCode
+                ? {
+                      studentCode,
+                      classId: route.params.classId
+                  }
+                : {
+                      studentId,
+                      classId: route.params.classId
+                  }
+        );
         successMessage.value = 'Them enrollment thanh cong.';
         selectedStudentId.value = '';
         searchKeyword.value = '';
@@ -124,15 +132,10 @@ async function onAddEnrollment() {
     }
 }
 
-async function onRemoveEnrollment(enrollmentId) {
-    if (!enrollmentId) {
-        errorMessage.value = 'Thieu enrollmentId tu API. Khong the xoa tren dong nay.';
-        return;
-    }
-
-    const parsedEnrollmentId = Number(enrollmentId);
-    if (!Number.isInteger(parsedEnrollmentId) || parsedEnrollmentId <= 0) {
-        errorMessage.value = 'Enrollment ID khong hop le de xoa.';
+async function onRemoveEnrollment(student) {
+    const studentCode = String(student?.studentCode || '').trim();
+    if (!studentCode) {
+        errorMessage.value = 'Thieu studentCode tu API. Khong the xoa hoc vien nay khoi lop.';
         return;
     }
 
@@ -140,7 +143,10 @@ async function onRemoveEnrollment(enrollmentId) {
         removeBusy.value = true;
         errorMessage.value = '';
         successMessage.value = '';
-        await deleteEnrollment(parsedEnrollmentId);
+        await deleteEnrollment({
+            studentCode,
+            classId: route.params.classId
+        });
         successMessage.value = 'Xoa enrollment thanh cong.';
         await loadStudents();
     } catch (error) {
@@ -202,6 +208,7 @@ function getEnrollmentStatusSeverity(status) {
 
         <DataTable :value="students" :loading="loading" responsiveLayout="scroll">
             <Column field="studentId" header="Student ID"></Column>
+            <Column field="studentCode" header="Student Code"></Column>
             <Column field="fullName" header="Student"></Column>
             <Column field="email" header="Email"></Column>
             <Column header="Progress">
@@ -222,10 +229,10 @@ function getEnrollmentStatusSeverity(status) {
                         label="Remove"
                         severity="danger"
                         size="small"
-                        :disabled="!slotProps.data.enrollmentId"
-                        :title="slotProps.data.enrollmentId ? 'Remove enrollment' : 'Missing enrollmentId from API'"
+                        :disabled="!slotProps.data.studentCode"
+                        :title="slotProps.data.studentCode ? 'Remove enrollment' : 'Missing studentCode from API'"
                         :loading="removeBusy"
-                        @click="onRemoveEnrollment(slotProps.data.enrollmentId)"
+                        @click="onRemoveEnrollment(slotProps.data)"
                     />
                 </template>
             </Column>

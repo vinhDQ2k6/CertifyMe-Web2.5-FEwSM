@@ -12,8 +12,11 @@ const submitting = ref(false);
 const quiz = ref(null);
 const answers = ref({});
 const errorMessage = ref('');
+const submitMessage = ref('');
 const existingResult = ref(null);
 const remainingSeconds = ref(0);
+const timeExpired = ref(false);
+const autoSubmitTriggered = ref(false);
 let countdownInterval = null;
 
 const timerLabel = computed(() => {
@@ -34,9 +37,6 @@ const canSubmitQuiz = computed(() => {
     if (String(quiz.value.status || '').toLowerCase() === 'closed') {
         return false;
     }
-    if (remainingSeconds.value <= 0) {
-        return false;
-    }
     return true;
 });
 
@@ -49,11 +49,19 @@ function clearTimer() {
 
 function startTimer(durationMinutes) {
     clearTimer();
+    timeExpired.value = false;
+    autoSubmitTriggered.value = false;
 
     const minutes = Number(durationMinutes) || 0;
     remainingSeconds.value = Math.max(0, Math.floor(minutes * 60));
 
     if (remainingSeconds.value <= 0) {
+        timeExpired.value = true;
+        if (!autoSubmitTriggered.value) {
+            autoSubmitTriggered.value = true;
+            submitMessage.value = 'Da het thoi gian. He thong dang tu dong nop bai...';
+            void onSubmit({ isAuto: true });
+        }
         return;
     }
 
@@ -67,7 +75,12 @@ function startTimer(durationMinutes) {
 
         if (remainingSeconds.value <= 0) {
             clearTimer();
-            errorMessage.value = 'Da het thoi gian lam bai. Vui long nop bai.';
+            timeExpired.value = true;
+            if (!autoSubmitTriggered.value) {
+                autoSubmitTriggered.value = true;
+                submitMessage.value = 'Da het thoi gian. He thong dang tu dong nop bai...';
+                void onSubmit({ isAuto: true });
+            }
         }
     }, 1000);
 }
@@ -149,8 +162,8 @@ onUnmounted(() => {
     clearTimer();
 });
 
-async function onSubmit() {
-    if (!canSubmitQuiz.value) {
+async function onSubmit({ isAuto = false } = {}) {
+    if (!canSubmitQuiz.value || submitting.value) {
         return;
     }
 
@@ -161,10 +174,11 @@ async function onSubmit() {
         }
 
         submitting.value = true;
+        submitMessage.value = '';
         await submitStudentQuiz(route.params.quizId, user.userId, answers.value);
         router.push(`/student/quiz/${route.params.quizId}/result`);
     } catch (error) {
-        errorMessage.value = getApiErrorMessage(error, 'Nop bai that bai.');
+        submitMessage.value = getApiErrorMessage(error, isAuto ? 'Tu dong nop bai that bai. Vui long bam Submit de thu lai.' : 'Nop bai that bai.');
     } finally {
         submitting.value = false;
     }
@@ -191,6 +205,14 @@ async function onSubmit() {
             </div>
         </div>
 
+        <div class="col-span-12" v-if="timeExpired">
+            <Message severity="warn">Da het thoi gian. Bai lam se duoc tu dong nop.</Message>
+        </div>
+
+        <div class="col-span-12" v-if="submitMessage">
+            <Message severity="warn">{{ submitMessage }}</Message>
+        </div>
+
         <div class="col-span-12" v-if="existingResult">
             <Message severity="info">
                 Ban da co ket qua truoc do. Ban van co the lam lai quiz, va co the xem ket qua hien tai.
@@ -215,7 +237,7 @@ async function onSubmit() {
                     :label="existingResult ? 'Submit Again' : 'Submit Quiz'"
                     :loading="submitting"
                     :disabled="!canSubmitQuiz"
-                    @click="onSubmit"
+                    @click="onSubmit()"
                 />
                 <Button
                     v-if="existingResult"

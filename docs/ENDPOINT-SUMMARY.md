@@ -1,389 +1,441 @@
-# API Endpoints & User Flows
+# API Endpoints & User Flows (Aligned With docs/java Backend)
 
-**Base URL:** `http://localhost:8080`  
-**Response Format:** `{ success, message, data, error }` → FE phải đọc `response.data.data`  
-**Headers:** `Authorization: Bearer <token>`
+Base URL: http://localhost:8080  
+Response wrapper: { success, message, data, error }  
+Auth header: Authorization: Bearer <token>
+
+Nguồn đối chiếu: docs/java/main/backend controllers + DTO.
 
 ---
 
-# 🔐 PHẦN 1: ĐĂNG NHẬP & XÁC ĐỊNH ROLE
+# 1) AUTH / OAuth2
 
-## OAuth2 Login Flow (FE hiển thị màn hình đăng nhập)
+## OAuth2 login flow
 
+1. FE redirect: GET /oauth2/authorization/google
+2. BE success handler redirect về FE callback với query token, role, redirect
+3. FE gọi GET /api/auth/me để lấy user profile
+
+Lưu ý cấu hình BE mặc định:
+
+- app.oauth2.redirect-uri mặc định: http://localhost:3000/oauth2/redirect
+- FRONTEND_URL mặc định cho CORS: http://localhost:3000
+
+Nếu FE chạy cổng khác thì phải set lại env BE tương ứng.
+
+## GET /api/auth/me
+
+Auth: required
+
+Response data (UserResponse):
+
+```json
+{
+	"userId": "550e8400-e29b",
+	"userCode": "HS00001",
+	"email": "student@gmail.com",
+	"fullName": "Nguyen Van A",
+	"avatarUrl": "https://...",
+	"role": "STUDENT",
+	"isActive": true
+}
 ```
-[STEP 1] User click "Login Google"
-  → FE redirect tới: GET /oauth2/authorization/google
-  → Google login popup
 
-[STEP 2] Google callback trả về token + role
-  → Lưu token vào localStorage
-  → Redirect tới role-specific dashboard
+## POST /api/auth/logout
 
-[STEP 3] FE gọi API lấy user info
-  → GET /api/auth/me (Header: Bearer token)
-  → Dùng response.data.data.role để route đúng dashboard
-```
+Auth: required
 
-### Endpoint: Get Current User Info
-
-- **Method:** `GET /api/auth/me`
-- **Auth:** Required (Bearer token)
-- **Response:**
+Response wrapper mẫu:
 
 ```json
 {
 	"success": true,
-	"data": {
-		"userId": "550e8400-e29b",
-		"userCode": "HS00001",
-		"email": "student@gmail.com",
-		"fullName": "Nguyễn Văn A",
-		"avatarUrl": "https://...",
-		"role": "STUDENT", // STUDENT | TEACHER | ADMIN
-		"isActive": true
+	"message": "Logged out successfully",
+	"data": null
+}
+```
+
+## GET /api/auth/check-role
+
+Auth: required
+
+Response thực tế hiện tại:
+
+```json
+{
+	"success": true,
+	"message": "You are logged in as: STUDENT",
+	"data": null
+}
+```
+
+Lưu ý: endpoint này KHONG trả data là role string.
+
+---
+
+# 2) USER QUERY ENDPOINTS
+
+## GET /api/users/{idOrCode}
+
+Auth role: TEACHER hoặc ADMIN
+
+Response data: UserResponse (giống /api/auth/me).
+
+## GET /api/users/search/students?q=keyword
+
+Auth role: TEACHER hoặc ADMIN
+
+Response data: List<UserResponse>
+
+## GET /api/users/search/teachers?q=keyword
+
+Auth role: ADMIN
+
+Response data: List<UserResponse>
+
+---
+
+# 3) STUDENT FLOWS
+
+## GET /api/student/{studentId}/courses
+
+Auth role: STUDENT
+
+Response data: List<CourseResponse>
+
+```json
+[
+	{
+		"courseId": "CRS001",
+		"courseCode": "JS101",
+		"courseName": "JavaScript Basics",
+		"courseIcon": "pi pi-book",
+		"teacherName": "Teacher A",
+		"progress": 45,
+		"totalQuizzes": 10,
+		"completedQuizzes": 4,
+		"averageScore": 7.5,
+		"completed": false
+	}
+]
+```
+
+## GET /api/student/{studentId}/certificates
+
+Auth role: STUDENT
+
+Response data: List<CertificateResponse>
+
+```json
+[
+	{
+		"courseName": "JavaScript Basics",
+		"courseCode": "JS101",
+		"certificateId": "CERT001",
+		"averageScore": 8.5,
+		"issuedAt": "2026-03-20",
+		"verificationHash": "abc123",
+		"status": "issued",
+		"blockchainInfo": {
+			"hash": "...",
+			"block": "...",
+			"txHash": "...",
+			"contract": "..."
+		}
+	}
+]
+```
+
+## GET /api/courses
+
+Auth: authenticated
+
+Response data: List<CourseListItemResponse>
+
+```json
+[
+	{
+		"courseId": "CRS001",
+		"courseCode": "JS101",
+		"courseName": "JavaScript Basics",
+		"description": "..."
+	}
+]
+```
+
+## GET /api/courses/{courseId}
+
+Auth role: STUDENT
+
+Response data: CourseDetailResponse
+
+```json
+{
+	"courseIcon": "pi pi-book",
+	"courseName": "JavaScript Basics",
+	"courseCode": "JS101",
+	"teacherName": "Teacher A",
+	"startDate": "2026-03-01",
+	"endDate": "2026-05-01",
+	"progress": 45,
+	"totalQuizzes": 10,
+	"completedQuizzes": 4,
+	"completed": false,
+	"studentName": "Student A",
+	"averageScore": 7.5,
+	"quizzes": [
+		{
+			"id": "QZ001",
+			"name": "Variables",
+			"score": 8.0,
+			"maxScore": 10.0,
+			"status": "completed"
+		}
+	],
+	"certificate": {
+		"verificationHash": "abc123",
+		"blockchainInfo": {
+			"txHash": "..."
+		}
 	}
 }
 ```
 
-### Endpoint: Logout
+## GET /api/classes/{classId}/quizzes
 
-- **Method:** `POST /api/auth/logout`
-- **Auth:** Required
-- **Response:** `{ success: true, data: null }`
-- **UI:** Clear token, redirect "/" (login page)
+Auth role: STUDENT hoặc TEACHER
 
----
+Response data: List<QuizResponseDTO>
 
-# 👨‍🎓 PHẦN 2: HỌC VIÊN (STUDENT) FLOWS
-
-## Flow 1: Xem Dashboard & Danh sách Khóa Học
-
-```
-[STEP 1] Học viên vào trang Dashboard
-  → FE gọi: GET /api/student/{userId}/courses
-  → Render: Danh sách cards "Khóa học đang học" + Progress bar
-
-[STEP 2] Học viên click vào 1 khóa
-  → FE gọi: GET /api/courses/{courseId}
-  → Render: Chi tiết khóa + Danh sách classes
-
-[STEP 3] Học viên chọn 1 class
-  → FE gọi: GET /api/classes/{classId}/quizzes
-  → Render: Danh sách quiz của class (hình: Bài quiz #1, #2, ...)
+```json
+[
+	{
+		"quizId": "QZ001",
+		"classId": "CLS001",
+		"quizName": "Quiz 1",
+		"duration": 20,
+		"passingScore": 6.0,
+		"maxScore": 10,
+		"questionCount": 5,
+		"status": "published"
+	}
+]
 ```
 
-### Endpoint: Student Dashboard - Get Courses
+## GET /api/quizzes/{quizId}
 
-- **Method:** `GET /api/student/{studentId}/courses`
-- **Auth:** Required (STUDENT only)
-- **UI Component:** Course cards + enrollment progress
-- **Response:**
+Auth role: STUDENT hoặc TEACHER
+
+Response data: QuizResponseDTO, phần questions theo optionA..optionD
 
 ```json
 {
-	"success": true,
-	"data": [
+	"quizId": "QZ001",
+	"quizName": "Quiz 1",
+	"duration": 20,
+	"passingScore": 6.0,
+	"questions": [
 		{
-			"courseId": "CRS001",
-			"courseName": "JavaScript Basics",
-			"description": "...",
-			"classes": [
-				{
-					"classId": "CLS001",
-					"className": "JS - Sáng",
-					"status": "LEARNING",
-					"enrolled_at": "2026-03-01",
-					"progress": 45
-				}
+			"questionId": 1,
+			"questionText": "What is a variable?",
+			"optionA": "...",
+			"optionB": "...",
+			"optionC": "...",
+			"optionD": "..."
+		}
+	]
+}
+```
+
+## POST /api/quizzes/{quizId}/submit
+
+Auth role: STUDENT
+
+Request body: QuizSubmissionRequest
+
+```json
+{
+	"studentId": "550e8400-e29b",
+	"answers": [{ "questionId": "1", "selectedOption": "A" }]
+}
+```
+
+Response data: QuizResultResponse
+
+```json
+{
+	"score": 8.0,
+	"maxScore": 10.0,
+	"status": "passed",
+	"submittedAt": "2026-03-31T10:30:00"
+}
+```
+
+## GET /api/quizzes/{quizId}/result
+
+Auth role: STUDENT
+
+Response data: QuizResultDetailResponse
+
+```json
+{
+	"quizId": "QZ001",
+	"quizTitle": "Quiz 1",
+	"score": 8.0,
+	"maxScore": 10.0,
+	"passingScore": 6.0,
+	"status": "passed",
+	"attemptCount": 2,
+	"submittedAt": "2026-03-31 10:30:00"
+}
+```
+
+---
+
+# 4) TEACHER FLOWS
+
+## GET /api/teacher/{teacherId}/classes
+
+Auth role: TEACHER
+
+Response data: List<ClassResponseDTO>
+
+```json
+[
+	{
+		"classId": "CLS001",
+		"classCode": "SD18303",
+		"courseName": "JavaScript Basics",
+		"courseId": "CRS001",
+		"teacherName": "Teacher A",
+		"studentCount": 25,
+		"quizCount": 5,
+		"status": "ACTIVE",
+		"startDate": "2026-03-01",
+		"endDate": "2026-05-01",
+		"description": "..."
+	}
+]
+```
+
+## GET /api/classes/{classId}
+
+Auth role: TEACHER
+
+Response data: ClassResponseDTO (cùng shape như trên).
+
+## GET /api/classes/{classId}/students
+
+Auth role: TEACHER
+
+Query params: status, sort, order (optional)
+
+Response data: List<StudentResponseDTO>
+
+```json
+[
+	{
+		"studentId": "550e...",
+		"fullName": "Student A",
+		"email": "a@example.com",
+		"avatarUrl": "https://...",
+		"completedQuizzes": 2,
+		"totalQuizzes": 5,
+		"averageScore": 7.8,
+		"status": "learning",
+		"enrolledAt": "2026-02-01T08:00:00"
+	}
+]
+```
+
+## POST /api/classes
+
+Auth role: TEACHER
+
+Request body: ClassRequestDTO
+
+```json
+{
+	"classCode": "SD18310",
+	"courseName": "JavaScript Basics",
+	"courseId": "CRS001",
+	"teacherId": "550e8400-teacher-id",
+	"startDate": "2026-04-01",
+	"endDate": "2026-06-30",
+	"description": "..."
+}
+```
+
+## PUT /api/classes/{id}
+
+Auth role: TEACHER
+
+Request body: ClassRequestDTO (same as create).
+
+## POST /api/quizzes
+
+Auth role: TEACHER
+
+Request body: QuizRequestDTO
+
+```json
+{
+	"classId": "CLS001",
+	"quizName": "Quiz 1",
+	"duration": 20,
+	"passingScore": 6,
+	"maxScore": 10,
+	"questions": [
+		{
+			"questionText": "What is a variable?",
+			"questionType": "multiple_choice",
+			"options": [
+				{ "optionId": "A", "optionText": "...", "isCorrect": true },
+				{ "optionId": "B", "optionText": "...", "isCorrect": false }
 			]
 		}
 	]
 }
 ```
 
-### Endpoint: Get Course Detail
+## PUT /api/quizzes/{quizId}
 
-- **Method:** `GET /api/courses/{courseId}`
-- **Auth:** Required
-- **Response:** Course info + list of classes
+Auth role: TEACHER
 
-### Endpoint: Get Quizzes in Class
+Request body: QuizRequestDTO (same as create).
 
-- **Method:** `GET /api/classes/{classId}/quizzes`
-- **Auth:** Required
-- **UI Component:** Quiz list (showing: quiz title, questions count, student's status)
-- **Response:**
+## DELETE /api/quizzes/{quizId}
 
-```json
-{
-	"success": true,
-	"data": [
-		{
-			"quizId": "QUIZ001",
-			"title": "Quiz 1: Variables & Types",
-			"description": "...",
-			"questionCount": 5,
-			"timeLimit": 20,
-			"passingScore": 60,
-			"studentStatus": "NOT_STARTED" // hoặc ATTEMPTED, PASSED, FAILED
-		}
-	]
-}
-```
+Auth role: TEACHER
 
----
+Response data: null.
 
-## Flow 2: Làm Quiz (Quizzes)
+## GET /api/quizzes/{quizId}/submissions
 
-```
-[STEP 1] Học viên click vào 1 quiz
-  → FE gọi: GET /api/quizzes/{quizId}
-  → Render: Chi tiết quiz + tất cả câu hỏi
-  → Hiển thị: Quiz title, description, time limit
+Auth role: TEACHER
 
-[STEP 2] Học viên trả lời câu hỏi
-  → FE collect answers
-  → Hiển thị: Question #N / Total
-
-[STEP 3] Học viên click "Submit"
-  → FE gọi: POST /api/quizzes/{quizId}/submit + answers
-  → Render: Kết quả (Score, Status PASSED/FAILED)
-  → Show: Retry button nếu failed
-```
-
-### Endpoint: Get Quiz Detail + Questions
-
-- **Method:** `GET /api/quizzes/{quizId}`
-- **Auth:** Required
-- **UI Component:** Quiz header + question list
-- **Response:**
+Response data: List<QuizSubmissionResponseDTO>
 
 ```json
-{
-	"success": true,
-	"data": {
-		"quizId": "QUIZ001",
-		"title": "Quiz 1",
-		"description": "...",
-		"questionCount": 5,
-		"timeLimit": 20,
-		"passingScore": 60,
-		"questions": [
-			{
-				"questionId": "Q1",
-				"text": "What is a variable?",
-				"type": "MULTIPLE_CHOICE",
-				"options": [
-					{ "id": "A", "text": "Option A" },
-					{ "id": "B", "text": "Option B" }
-				]
-			}
-		]
+[
+	{
+		"submissionId": "SUB001",
+		"studentId": "550e...",
+		"studentName": "Student A",
+		"studentEmail": "a@example.com",
+		"score": 8.5,
+		"maxScore": 10,
+		"passed": true,
+		"submittedAt": "2026-03-31T10:30:00"
 	}
-}
+]
 ```
 
-### Endpoint: Submit Quiz
+## POST /api/enrollments
 
-- **Method:** `POST /api/quizzes/{quizId}/submit`
-- **Auth:** Required
-- **Request Body:**
+Auth role: TEACHER hoặc ADMIN
 
-```json
-{
-	"studentId": "550e8400-e29b",
-	"answers": [
-		{ "questionId": "Q1", "selectedOption": "A" },
-		{ "questionId": "Q2", "selectedOption": "C" }
-	]
-}
-```
-
-- **UI Component:** Results page with score + pass/fail badge
-- **Response:**
-
-```json
-{
-	"success": true,
-	"data": {
-		"quizId": "QUIZ001",
-		"score": 80,
-		"maxScore": 100,
-		"status": "passed", // lowercase
-		"submittedAt": "2026-03-31T10:30:00Z"
-	}
-}
-```
-
-### Endpoint: Get Quiz Result (after submit)
-
-- **Method:** `GET /api/quizzes/{quizId}/result`
-- **Auth:** Required
-- **Response:** Score + detailed answers + correct answers (for review)
-
----
-
-## Flow 3: Xem Chứng Chỉ
-
-```
-[STEP 1] Học viên vào tab "Chứng chỉ"
-  → FE gọi: GET /api/student/{studentId}/certificates
-  → Render: Danh sách certifications đã nhận
-
-[STEP 2] Học viên click vào 1 cert
-  → Hiển thị: Chi tiết cert (date, score, blockchain verify link)
-```
-
-### Endpoint: Student Get Certificates
-
-- **Method:** `GET /api/student/{studentId}/certificates`
-- **Auth:** Required (STUDENT only)
-- **UI Component:** Certificates grid/list (card: course name, date, verify button)
-- **Response:**
-
-```json
-{
-	"success": true,
-	"data": [
-		{
-			"certificateId": "CERT001",
-			"courseName": "JavaScript Basics",
-			"courseCode": "JS101",
-			"studentName": "Nguyễn Văn A",
-			"averageScore": 85,
-			"issuedAt": "2026-03-20",
-			"status": "issued",
-			"verificationHash": "abc123...",
-			"blockchainInfo": null // optional
-		}
-	]
-}
-```
-
----
-
-# 👨‍🏫 PHẦN 3: GIÁO VIÊN (TEACHER) FLOWS
-
-## Flow 1: Xem Danh sách Lớp (Dashboard)
-
-```
-[STEP 1] Giáo viên vào Dashboard
-  → FE gọi: GET /api/teacher/{teacherId}/classes
-  → Render: Danh sách lớp đang dạy (cards: tên lớp, số học viên)
-
-[STEP 2] GV click vào 1 lớp
-  → FE gọi: GET /api/classes/{classId}
-  → Render: Chi tiết lớp (tên, môn học, thời gian)
-  → Show tabs: "Học viên", "Quiz", "Cài đặt"
-```
-
-### Endpoint: Teacher Get Classes
-
-- **Method:** `GET /api/teacher/{teacherId}/classes`
-- **Auth:** Required (TEACHER only)
-- **UI Component:** Class cards (showing: class name, student count, status)
-- **Response:**
-
-```json
-{
-	"success": true,
-	"data": [
-		{
-			"classId": "CLS001",
-			"className": "JavaScript - Lớp Sáng",
-			"courseId": "CRS001",
-			"description": "Khóa học lập trình JavaScript",
-			"studentCount": 25,
-			"status": "ACTIVE"
-		}
-	]
-}
-```
-
-### Endpoint: Get Class Detail
-
-- **Method:** `GET /api/classes/{classId}`
-- **Auth:** Required
-- **Response:** Class info + course details + student list
-
----
-
-## Flow 2: Quản Lý Học Viên trong Lớp
-
-```
-[STEP 1] GV click tab "Học viên"
-  → FE gọi: GET /api/classes/{classId}/students?status=LEARNING
-  → Render: Table danh sách học viên (columns: Mã HS, Tên, Trạng thái, Điểm)
-  → Show filter buttons: "Đang học", "Đã hoàn thành"
-
-[STEP 2] GV click "Thêm học viên"
-  → Mở modal search
-  → FE gọi: GET /api/users/search/students?q=
-  → Show search results
-
-[STEP 3] GV click "Thêm" (sau khi chọn HS)
-  → FE gọi: POST /api/enrollments
-  → Success → reload danh sách
-
-[STEP 4] GV click "Xóa" (trên hàng học viên)
-  → FE gọi: DELETE /api/enrollments/{enrollmentId}
-  → Success → reload danh sách
-```
-
-### Endpoint: Get Students in Class
-
-- **Method:** `GET /api/classes/{classId}/students`
-- **Query Params:** `status=LEARNING|PASSED` + `sort=name|score|date` + `order=asc|desc`
-- **Auth:** Required (TEACHER/ADMIN only)
-- **UI Component:** Students table (sortable, filterable, with action buttons)
-- **Response:**
-
-```json
-{
-	"success": true,
-	"data": [
-		{
-			"enrollmentId": 101,
-			"studentId": "550e8400-e29b",
-			"fullName": "Nguyễn Văn A",
-			"email": "student@gmail.com",
-			"avatarUrl": "https://...",
-			"completedQuizzes": 2,
-			"totalQuizzes": 5,
-			"status": "learning", // lowercase
-			"enrolledAt": "2026-02-01T08:00:00",
-			"averageScore": 78.5
-		}
-	]
-}
-```
-
-### Endpoint: Search Students
-
-- **Method:** `GET /api/users/search/students?q=keyword`
-- **Auth:** Required (TEACHER/ADMIN)
-- **Query Param:** searches in `userCode`, `email`, `fullName`
-- **Response:**
-
-```json
-{
-	"success": true,
-	"data": [
-		{
-			"userId": "...",
-			"userCode": "HS00001",
-			"fullName": "Nguyễn Văn A",
-			"email": "a@gmail.com"
-		}
-	]
-}
-```
-
-### Endpoint: Add Student to Class (Enroll)
-
-- **Method:** `POST /api/enrollments`
-- **Auth:** Required (TEACHER/ADMIN)
-- **Request Body:** (use studentCode OR studentId)
+Request body: EnrollmentRequestDTO
 
 ```json
 {
@@ -392,7 +444,7 @@
 }
 ```
 
-or
+hoặc
 
 ```json
 {
@@ -401,447 +453,310 @@ or
 }
 ```
 
-- **Response:** `{ success: true, data: { enrollmentId, status } }`
-
-### Endpoint: Remove Student from Class
-
-- **Method:** `DELETE /api/enrollments/{enrollmentId}`
-- **Auth:** Required (TEACHER/ADMIN)
-- **Response:** `{ success: true, data: null }`
-
----
-
-## Flow 3: Quản Lý Quiz trong Lớp
-
-```
-[STEP 1] GV click tab "Quiz"
-  → FE gọi: GET /api/classes/{classId}/quizzes
-  → Render: Danh sách quiz (columns: Tiêu đề, Câu hỏi, Hạn cuối, Hành động)
-
-[STEP 2] GV click "Tạo Quiz mới"
-  → Mở form: Quiz title, description, time limit, passing score
-  → FE gọi: POST /api/quizzes + quiz data + questions
-  → Success → reload danh sách
-
-[STEP 3] GV click "Sửa"
-  → Mở form pre-filled
-  → FE gọi: PUT /api/quizzes/{quizId}
-  → Success → reload
-
-[STEP 4] GV click "Xóa"
-  → Confirm dialog
-  → FE gọi: DELETE /api/quizzes/{quizId}
-  → Success → reload
-
-[STEP 5] GV click "Xem bài nộp"
-  → FE gọi: GET /api/quizzes/{quizId}/submissions
-  → Render: Table kết quả (columns: Tên HS, Score, Status, Thời gian nộp)
-```
-
-### Endpoint: Get Quizzes in Class
-
-- **Method:** `GET /api/classes/{classId}/quizzes`
-- **Auth:** Required
-- **Response:** List of quizzes
-
-### Endpoint: Create Quiz (Teacher only)
-
-- **Method:** `POST /api/quizzes`
-- **Auth:** Required (TEACHER only)
-- **Request Body:**
+Response data: EnrollmentResponseDTO
 
 ```json
 {
+	"enrollmentId": 101,
+	"studentId": "550e8400-e29b",
+	"studentCode": "HS00001",
+	"studentName": "Student A",
 	"classId": "CLS001",
-	"quizName": "Quiz 1: Variables",
-	"duration": 20,
-	"passingScore": 6,
-	"questions": [
-		{
-			"questionText": "What is a variable?",
-			"questionType": "multiple_choice",
-			"options": [
-				{ "optionId": "A", "optionText": "Option A", "isCorrect": true },
-				{ "optionId": "B", "optionText": "Option B", "isCorrect": false },
-				{ "optionId": "C", "optionText": "Option C", "isCorrect": false },
-				{ "optionId": "D", "optionText": "Option D", "isCorrect": false }
-			]
-		}
-	]
+	"className": "SD18303",
+	"status": "LEARNING",
+	"enrolledAt": "2026-04-01"
 }
 ```
 
-### Endpoint: Update Quiz
+## DELETE /api/enrollments?studentCode=HS00001&classId=CLS001
 
-- **Method:** `PUT /api/quizzes/{quizId}`
-- **Auth:** Required (TEACHER only)
-- **Request Body:** Same as POST
+Auth role: TEACHER hoặc ADMIN
 
-### Endpoint: Delete Quiz
-
-- **Method:** `DELETE /api/quizzes/{quizId}`
-- **Auth:** Required (TEACHER only)
-
-### Endpoint: Get Quiz Submissions
-
-- **Method:** `GET /api/quizzes/{quizId}/submissions`
-- **Auth:** Required (TEACHER only)
-- **UI Component:** Submissions table (sortable: student name, score, status)
-- **Response:**
-
-```json
-{
-	"success": true,
-	"data": [
-		{
-			"submissionId": "SUB001",
-			"studentId": "...",
-			"studentName": "Nguyễn Văn A",
-			"studentEmail": "a@gmail.com",
-			"score": 85,
-			"maxScore": 100,
-			"passed": true,
-			"submittedAt": "2026-03-31T10:30:00Z"
-		}
-	]
-}
-```
+Response data: null.
 
 ---
 
-# 🛡️ PHẦN 4: QUẢN TRỊ VIÊN (ADMIN) FLOWS
+# 5) ADMIN FLOWS
 
-## Flow 1: Quản Lý Chứng Chỉ
+## GET /api/admin/certificates/stats
 
-```
-[STEP 1] Admin vào tab "Chứng chỉ"
-  → FE gọi: GET /api/admin/certificates/stats
-  → Render: Stats dashboard (Tổng cấp, Tổng thu hồi, etc.)
+Auth role: ADMIN
 
-[STEP 2] Admin click "Danh sách mới nhất"
-  → FE gọi: GET /api/certificates/recent?limit=20&page=1
-  → Render: Table chứng chỉ
-
-[STEP 3] Admin tìm kiếm
-  → FE gọi: GET /api/certificates/search?q=keyword&status=issued
-  → Render: Search results
-
-[STEP 4] Admin click vào 1 cert
-  → FE gọi: GET /api/certificates/{certificateId}
-  → Render: Chi tiết cert + verify button + revoke button
-
-[STEP 5] Admin click "Xác minh" (Blockchain)
-  → FE gọi: POST /api/certificates/{certificateId}/verify
-  → Show: Verification result
-
-[STEP 6] Admin click "Thu hồi"
-  → Mở dialog confirm + reason
-  → FE gọi: POST /api/certificates/{certificateId}/revoke + reason
-  → Success → reload danh sách
-```
-
-### Endpoint: Get Certificate Stats
-
-- **Method:** `GET /api/admin/certificates/stats`
-- **Auth:** Required (ADMIN only)
-- **UI Component:** Stats dashboard (cards: issued, revoked, pending)
-- **Response:**
+Response data: CertificateStats
 
 ```json
 {
-	"success": true,
-	"data": {
-		"totalCertificates": 150,
-		"issuedCertificates": 145,
-		"revokedCertificates": 5,
-		"certificatesThisMonth": 15,
-		"certificatesThisYear": 90
-	}
+	"totalCertificates": 150,
+	"issuedCertificates": 145,
+	"revokedCertificates": 5,
+	"certificatesThisMonth": 20,
+	"certificatesThisYear": 80
 }
 ```
 
-### Endpoint: Get Recent Certificates
+## GET /api/certificates/recent?limit=10&page=1
 
-- **Method:** `GET /api/certificates/recent?limit=20&page=1`
-- **Auth:** Required (ADMIN only)
-- **Query Params:** `limit` (default 10), `page` (default 1)
-- **UI Component:** Certificates table (sortable, filterable)
-- **Response:**
+Auth role: ADMIN
+
+Response data: CertificateListResponse
 
 ```json
 {
-	"success": true,
-	"data": {
-		"items": [
-			{
-				"certificateId": "CERT001",
-				"studentEmail": "a@gmail.com",
-				"className": "CLS001",
-				"courseCode": "JS101",
-				"studentName": "Nguyễn Văn A",
-				"averageScore": 85,
-				"issuedAt": "2026-03-20T00:00:00Z",
-				"status": "issued",
-				"verificationHash": "abc123..."
-			}
-		],
-		"pagination": {
-			"page": 1,
-			"limit": 20,
-			"total": 150,
-			"totalPages": 8
+	"items": [
+		{
+			"certificateId": "CERT001",
+			"studentName": "Student A",
+			"studentEmail": "a@example.com",
+			"className": "SD18303",
+			"courseCode": "JS101",
+			"averageScore": 8.5,
+			"issuedAt": "2026-03-20T00:00:00",
+			"status": "issued",
+			"verificationHash": "abc123"
 		}
-	}
-}
-```
-
-### Endpoint: Search Certificates
-
-- **Method:** `GET /api/certificates/search?q=keyword&status=issued`
-- **Auth:** Required (ADMIN only)
-- **Query Params:** `q` (search in course name, student name), `status` (issued/revoked/pending), `limit`
-- **Response:** Same as recent certificates
-
-### Endpoint: Get Certificate Detail
-
-- **Method:** `GET /api/certificates/{certificateId}`
-- **Auth:** Required (ADMIN only)
-- **UI Component:** Cert detail page (with verify + revoke buttons)
-- **Response:**
-
-```json
-{
-	"success": true,
-	"data": {
-		"certificateId": "CERT001",
-		"courseName": "JavaScript Basics",
-		"courseCode": "JS101",
-		"studentName": "Nguyễn Văn A",
-		"studentCode": "HS00001",
-		"averageScore": 85,
-		"issuedAt": "2026-03-20T00:00:00Z",
-		"status": "issued",
-		"verificationHash": "abc123def456",
-		"blockchainInfo": null // optional blockchain data
-	}
-}
-```
-
-### Endpoint: Verify Certificate (Blockchain)
-
-- **Method:** `POST /api/certificates/{certificateId}/verify`
-- **Auth:** Required (ADMIN only)
-- **UI Component:** Modal/page showing verification result
-- **Response:**
-
-```json
-{
-	"success": true,
-	"data": {
-		"certificateId": "CERT001",
-		"isValid": true,
-		"blockchainVerificationDate": "2026-03-31T15:00:00Z",
-		"verificationHash": "abc123..."
-	}
-}
-```
-
-### Endpoint: Revoke Certificate
-
-- **Method:** `POST /api/certificates/{certificateId}/revoke`
-- **Auth:** Required (ADMIN only)
-- **Request Body:**
-
-```json
-{
-	"reason": "Mục đích kiểm tra" // optional
-}
-```
-
-- **Response:** `{ success: true, data: { certificateId, status: "revoked" } }`
-
----
-
-## Flow 2: Quản Lý Users
-
-```
-[STEP 1] Admin vào tab "Người dùng"
-  → FE gọi: GET /api/admin/users?role=STUDENT&status=ACTIVE&page=1&limit=20
-  → Render: Danh sách users (columns: Mã code, Tên, Role, Trạng thái)
-
-[STEP 2] Admin filter role hoặc status
-  → FE gọi: GET /api/admin/users?role=TEACHER&status=ACTIVE
-  → Render: Filtered list
-
-[STEP 3] Admin click "Vô hiệu hóa" user
-  → Confirm dialog
-  → FE gọi: PUT /api/admin/users/{userId}/status + { status: "INACTIVE" }
-  → Success → reload
-
-[STEP 4] Admin click "Đổi role"
-  → Mở dropdown (STUDENT/TEACHER)
-  → FE gọi: PUT /api/admin/users/{userId}/role + { role: "TEACHER" }
-  → Success → reload
-```
-
-### Endpoint: Get Users List
-
-- **Method:** `GET /api/admin/users?role=STUDENT&status=ACTIVE&page=1&limit=20`
-- **Auth:** Required (ADMIN only)
-- **Query Params:** `role` (STUDENT/TEACHER/ADMIN), `status` (ACTIVE/INACTIVE), `page`, `limit`
-- **UI Component:** Users table (with filter dropdowns, action buttons)
-- **Response:**
-
-```json
-{
-	"success": true,
-	"data": {
-		"users": [
-			{
-				"userId": "...",
-				"userCode": "HS00001",
-				"fullName": "Nguyễn Văn A",
-				"email": "a@gmail.com",
-				"role": "STUDENT",
-				"status": "ACTIVE",
-				"createdAt": "2026-01-01T00:00:00Z"
-			}
-		],
-		"totalCount": 100,
+	],
+	"pagination": {
 		"page": 1,
-		"pageSize": 20
+		"limit": 10,
+		"total": 150,
+		"totalPages": 15
 	}
 }
 ```
 
-### Endpoint: Update User Status
+## GET /api/certificates/search?q=keyword&status=issued&limit=20
 
-- **Method:** `PUT /api/admin/users/{userId}/status`
-- **Auth:** Required (ADMIN only)
-- **Request Body:**
+Auth role: ADMIN
+
+Response data: CertificateListResponse (same shape as recent).
+
+## GET /api/certificates/{certificateId}
+
+Auth role: ADMIN
+
+Response data: CertificateDetail
+
+```json
+{
+	"certificateId": "CERT001",
+	"studentId": "550e...",
+	"studentName": "Student A",
+	"studentEmail": "a@example.com",
+	"classId": "CLS001",
+	"className": "SD18303",
+	"courseCode": "JS101",
+	"courseName": "JavaScript Basics",
+	"averageScore": 8.5,
+	"issuedAt": "2026-03-20T00:00:00",
+	"status": "issued",
+	"verificationHash": "abc123",
+	"blockchainInfo": {
+		"transactionHash": "...",
+		"blockNumber": "...",
+		"contractAddress": "...",
+		"networkName": "...",
+		"explorerUrl": "..."
+	},
+	"quizResults": [
+		{
+			"quizId": "QZ001",
+			"quizName": "Quiz 1",
+			"score": 8.0,
+			"maxScore": 10,
+			"completedAt": "2026-03-15T10:00:00"
+		}
+	]
+}
+```
+
+## POST /api/certificates/{certificateId}/verify
+
+Auth role: ADMIN
+
+Response data: CertificateVerificationResult
+
+```json
+{
+	"certificateId": "CERT001",
+	"isValid": true,
+	"verificationHash": "abc123",
+	"verifiedAt": "2026-03-31T15:00:00",
+	"blockchainInfo": {
+		"transactionHash": "...",
+		"blockNumber": "...",
+		"contractAddress": "...",
+		"timestamp": "...",
+		"status": "CONFIRMED"
+	}
+}
+```
+
+## POST /api/certificates/{certificateId}/revoke
+
+Auth role: ADMIN
+
+Request body: RevokeRequest
+
+```json
+{
+	"reason": "Manual revoke",
+	"revokedBy": "admin@certifyme.dev"
+}
+```
+
+Response data: RevokeResponse
+
+```json
+{
+	"certificateId": "CERT001",
+	"status": "revoked",
+	"revokedAt": "2026-04-01T09:00:00",
+	"revokedByUserId": "550e...",
+	"reason": "Manual revoke"
+}
+```
+
+## GET /api/admin/users?role=TEACHER&status=ACTIVE&page=1&limit=20
+
+Auth role: ADMIN
+
+Response data: UserListResponse
+
+```json
+{
+	"items": [
+		{
+			"userId": "550e...",
+			"fullName": "Teacher A",
+			"email": "teacher@example.com",
+			"role": "TEACHER",
+			"avatarUrl": "https://...",
+			"isActive": true,
+			"createdAt": "2026-01-01T00:00:00",
+			"lastLoginAt": "2026-04-01T08:00:00"
+		}
+	],
+	"pagination": {
+		"page": 1,
+		"limit": 20,
+		"total": 100,
+		"totalPages": 5
+	}
+}
+```
+
+## PUT /api/admin/users/{userId}/status
+
+Auth role: ADMIN
+
+Request body: UpdateUserStatusRequest
 
 ```json
 {
 	"isActive": false,
-	"reason": "Disabled by admin" // optional
+	"reason": "Disabled by admin"
 }
 ```
 
-- **Response:** `{ success: true, data: { userId, status } }`
-
-### Endpoint: Update User Role
-
-- **Method:** `PUT /api/admin/users/{userId}/role`
-- **Auth:** Required (ADMIN only)
-- **Request Body:**
+Response data: UpdateUserStatusResponse
 
 ```json
 {
-	"role": "TEACHER" // hoặc STUDENT, ADMIN
+	"userId": "550e...",
+	"isActive": false,
+	"updatedAt": "2026-04-01T09:00:00"
 }
 ```
 
-- **Response:** `{ success: true, data: { userId, role } }`
+## PUT /api/admin/users/{userId}/role
+
+Auth role: ADMIN
+
+Request body:
+
+```json
+{
+	"role": "TEACHER"
+}
+```
+
+Response data: UpdateUserRoleResponse
+
+```json
+{
+	"userId": "550e...",
+	"previousRole": "STUDENT",
+	"newRole": "TEACHER",
+	"updatedAt": "2026-04-01T10:00:00"
+}
+```
 
 ---
 
-# 📋 PHẦN 5: QUY ƯỚC & STATUS CODES
+# 6) HTTP STATUS & RESPONSE WRAPPER
 
-## User Code Format (Auto-generated)
+Thông thường:
 
-| Prefix | Role                | Ví dụ   |
-| ------ | ------------------- | ------- |
-| HS     | Học Sinh (Student)  | HS00001 |
-| GV     | Giáo Viên (Teacher) | GV00001 |
-| AD     | Quản Trị (Admin)    | AD00001 |
+- 200: success
+- 201: created (POST class, POST enrollments, POST quizzes)
+- 400: validation/business error
+- 401: unauthorized
+- 403: forbidden
+- 404: not found
+- 500: server error
 
-Auto-generated khi user đăng nhập Google lần đầu.
-
----
-
-## HTTP Status Codes
-
-| Code | Ý nghĩa      | Hành động FE                                |
-| ---- | ------------ | ------------------------------------------- |
-| 200  | SUCCESS      | Render response.data.data                   |
-| 201  | CREATED      | Notify success + reload data                |
-| 400  | BAD REQUEST  | Show error message (validation errors)      |
-| 401  | UNAUTHORIZED | Clear token + redirect to login             |
-| 403  | FORBIDDEN    | Show "Không có quyền" + stay on page        |
-| 404  | NOT FOUND    | Show "Không tìm thấy" + redirect or go back |
-| 500  | SERVER ERROR | Show "Lỗi hệ thống, vui lòng thử lại"       |
-
----
-
-## Response Wrapper Pattern
-
-**Tất cả endpoints** trả về format này:
+Response wrapper chuẩn:
 
 ```json
 {
 	"success": true,
 	"message": "Optional message",
-	"data": {
-		/* actual data */
-	},
+	"data": {},
 	"error": null
 }
 ```
 
-**FE phải đọc từ:** `response.data.data` (sau khi axios trả về)
-
-**Error response:**
+Error wrapper:
 
 ```json
 {
 	"success": false,
-	"message": "Lỗi xảy ra",
+	"message": "Optional message",
 	"data": null,
-	"error": "Detailed error message"
+	"error": "Detailed error"
 }
 ```
 
 ---
 
-# 🎯 FRONTEND IMPLEMENTATION CHECKLIST
+# 7) FE CHECKLIST (Updated To Current BE)
 
 ## Authentication
 
-- [ ] Login button → redirect `/oauth2/authorization/google`
-- [ ] After redirect, read `token` from URL query
-- [ ] Store token in `localStorage`
-- [ ] Call `GET /api/auth/me` with token
-- [ ] Read `role` from response → determine dashboard
-- [ ] Setup axios interceptor to add `Authorization: Bearer` header
-- [ ] Logout: clear token + redirect to login
+- [ ] Login redirect tới /oauth2/authorization/google
+- [ ] OAuth callback đọc token + role
+- [ ] Gọi /api/auth/me lấy user profile
+- [ ] Logout qua /api/auth/logout
+- [ ] Nếu dùng /api/auth/check-role thì parse message (data hiện đang null)
 
 ## Student
 
-- [ ] Dashboard: `GET /api/student/{userId}/courses` → show course cards
-- [ ] Quiz list: `GET /api/classes/{classId}/quizzes` → show quiz titles
-- [ ] Quiz detail: `GET /api/quizzes/{quizId}` → show questions
-- [ ] Submit: `POST /api/quizzes/{quizId}/submit` + answers → show score
-- [ ] Certificates: `GET /api/student/{userId}/certificates` → show cert list
+- [ ] Dashboard dùng /api/student/{studentId}/courses theo shape CourseResponse
+- [ ] Course detail dùng /api/courses/{courseId} theo shape CourseDetailResponse
+- [ ] Quiz list/detail dùng field quizName, duration, optionA..optionD
+- [ ] Submit quiz theo body studentId + answers
+- [ ] Certificates dùng shape CertificateResponse
 
 ## Teacher
 
-- [ ] Dashboard: `GET /api/teacher/{userId}/classes` → show class cards
-- [ ] Students: `GET /api/classes/{classId}/students` → show student table
-- [ ] Add student: `GET /api/users/search/students?q=` → search + `POST /api/enrollments` → add
-- [ ] Remove student: `DELETE /api/enrollments/{enrollmentId}`
-- [ ] Create quiz: `POST /api/quizzes` + questions
-- [ ] Edit quiz: `PUT /api/quizzes/{quizId}`
-- [ ] Delete quiz: `DELETE /api/quizzes/{quizId}`
-- [ ] Submissions: `GET /api/quizzes/{quizId}/submissions` → show table
+- [ ] Class create/update gửi classCode, courseId, teacherId, startDate, endDate
+- [ ] Class students đọc StudentResponseDTO (không có studentCode trong list)
+- [ ] Quiz create/update gửi quizName, duration, questionText, options.isCorrect
+- [ ] Enrollment delete dùng query studentCode + classId
 
 ## Admin
 
-- [ ] Dashboard: `GET /api/admin/certificates/stats` → show stats cards
-- [ ] Certs list: `GET /api/certificates/recent?limit=20&page=1` → paginated table
-- [ ] Search certs: `GET /api/certificates/search?q=...&status=...`
-- [ ] Cert detail: `GET /api/certificates/{certificateId}`
-- [ ] Verify cert: `POST /api/certificates/{certificateId}/verify`
-- [ ] Revoke cert: `POST /api/certificates/{certificateId}/revoke`
-- [ ] Users list: `GET /api/admin/users?role=STUDENT&status=ACTIVE`
-- [ ] Update user status: `PUT /api/admin/users/{userId}/status`
-- [ ] Update user role: `PUT /api/admin/users/{userId}/role`
+- [ ] Cert stats dùng totalCertificates/issuedCertificates/revokedCertificates
+- [ ] Cert recent/search đọc data.items + data.pagination
+- [ ] User list đọc data.items + data.pagination
+- [ ] Update user status gửi isActive boolean (không gửi status string)
