@@ -1,6 +1,7 @@
 <script setup>
+import { resolveSessionUser } from '@/mock/auth';
 import { getApiErrorMessage } from '@/service/apiClient';
-import { getClassQuizzes, getCourseDetail } from '@/service/studentApi';
+import { getClassQuizzes, getCourseDetail, issueStudentCertificate } from '@/service/studentApi';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
@@ -15,6 +16,8 @@ const selectedClassId = ref('');
 const detailDialogVisible = ref(false);
 const detailTitle = ref('');
 const detailValue = ref('');
+const issuingCertificate = ref(false);
+const issueMessage = ref('');
 
 function shortenMiddle(value, head = 10, tail = 8) {
     const text = value == null ? '' : String(value);
@@ -61,6 +64,10 @@ const classOptions = computed(() => {
 
 const selectedClassSummary = computed(() => {
     return classOptions.value.find((item) => item.classId === selectedClassId.value) || null;
+});
+
+const effectiveClassId = computed(() => {
+    return selectedClassId.value || classOptions.value[0]?.classId || course.value?.classId || '';
 });
 
 const courseProgress = computed(() => {
@@ -151,6 +158,64 @@ function getQuizAction(quiz) {
 }
 
 const certificateInfo = computed(() => course.value?.certificate || null);
+
+const isCourseCompleted = computed(() => {
+    const completedByBoolean = typeof course.value?.completed === 'boolean' ? course.value.completed : typeof course.value?.isCompleted === 'boolean' ? course.value.isCompleted : false;
+    const total = Number(course.value?.totalQuizzes ?? 0);
+    const done = Number(course.value?.completedQuizzes ?? 0);
+    const completedByQuizRatio = total > 0 && done >= total;
+    const completedByProgress = Number(courseProgress.value ?? 0) >= 100;
+    return completedByBoolean || completedByQuizRatio || completedByProgress;
+});
+
+const canIssueCertificate = computed(() => {
+    return isCourseCompleted.value && !certificateInfo.value && !issuingCertificate.value;
+});
+
+const blockDisplay = computed(() => {
+    const raw = certificateInfo.value?.blockchainInfo?.block;
+    if (raw === null || raw === undefined || String(raw).trim() === '') {
+        return 'N/A';
+    }
+    return String(raw);
+});
+
+async function onIssueCertificate() {
+    const user = resolveSessionUser();
+    const classId = effectiveClassId.value;
+
+    if (!user?.userId) {
+        issueMessage.value = 'Khong tim thay student session. Vui long dang nhap lai.';
+        return;
+    }
+
+    if (!classId) {
+        issueMessage.value = 'Thieu classId tu API course detail. Chua the goi issue certificate.';
+        return;
+    }
+
+    try {
+        issuingCertificate.value = true;
+        issueMessage.value = '';
+        const issued = await issueStudentCertificate(user.userId, classId);
+
+        if (course.value) {
+            course.value = {
+                ...course.value,
+                certificate: {
+                    verificationHash: issued?.verificationHash || '',
+                    blockchainInfo: issued?.blockchainInfo || null
+                }
+            };
+        }
+
+        issueMessage.value = 'Cap chung chi thanh cong. Du lieu blockchain da duoc cap nhat.';
+    } catch (error) {
+        issueMessage.value = getApiErrorMessage(error, 'Cap chung chi that bai. Vui long thu lai.');
+    } finally {
+        issuingCertificate.value = false;
+    }
+}
 
 async function loadClassQuizzes(classId) {
     if (!classId) {
@@ -281,7 +346,7 @@ watch(selectedClassId, async (newClassId, oldClassId) => {
                             <span>Hash: {{ shortenMiddle(certificateInfo.blockchainInfo?.hash || '-') }}</span>
                             <Button icon="pi pi-eye" size="small" text rounded @click="openDetail('Blockchain Hash', certificateInfo.blockchainInfo?.hash || '-')" />
                         </div>
-                        <div class="text-sm">Block: {{ certificateInfo.blockchainInfo?.block || '-' }}</div>
+                        <div class="text-sm">Block: {{ blockDisplay }}</div>
                         <div class="text-sm flex items-center gap-2 min-w-0">
                             <span>Tx: {{ shortenMiddle(certificateInfo.blockchainInfo?.txHash || '-') }}</span>
                             <Button icon="pi pi-eye" size="small" text rounded @click="openDetail('Transaction Hash', certificateInfo.blockchainInfo?.txHash || '-')" />
@@ -291,7 +356,19 @@ watch(selectedClassId, async (newClassId, oldClassId) => {
                             <Button icon="pi pi-eye" size="small" text rounded @click="openDetail('Contract Address', certificateInfo.blockchainInfo?.contract || '-')" />
                         </div>
                     </div>
-                    <div class="text-color-secondary mb-4" v-else>Chua du dieu kien hoac chua co chung chi.</div>
+                    <div class="text-color-secondary mb-3" v-else>Chua du dieu kien hoac chua co chung chi.</div>
+                    <div v-if="!certificateInfo && canIssueCertificate" class="mb-3">
+                        <Button
+                            label="Issue Certificate"
+                            icon="pi pi-send"
+                            class="w-full"
+                            :loading="issuingCertificate"
+                            :disabled="!effectiveClassId"
+                            @click="onIssueCertificate"
+                        />
+                        <small v-if="!effectiveClassId" class="text-orange-500">Khong tim thay classId trong response hien tai.</small>
+                    </div>
+                    <Message v-if="issueMessage" class="mb-3" :severity="certificateInfo ? 'success' : 'warn'">{{ issueMessage }}</Message>
                     <Button label="My Certificates" class="w-full" severity="secondary" as="router-link" to="/student/certificates" />
                 </div>
             </div>

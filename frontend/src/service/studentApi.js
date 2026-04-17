@@ -40,3 +40,9 @@ export function getQuizResult(quizId) {
 export function getStudentCertificates(studentId) {
     return apiRequest(`/api/student/${studentId}/certificates`);
 }
+
+export function issueStudentCertificate(studentId, classId) {
+    return apiRequest(`/api/student/${studentId}/classes/${classId}/certificates/issue`, {
+        method: 'POST'
+    });
+}

@@ -35,6 +35,13 @@ function openDetail(title, value) {
     detailDialogVisible.value = true;
 }
 
+function displayOrNA(value) {
+    if (value === null || value === undefined || String(value).trim() === '') {
+        return 'N/A';
+    }
+    return String(value);
+}
+
 function getStatusSeverity(status) {
     const normalized = String(status || '').toLowerCase();
     if (normalized === 'issued') {
@@ -79,12 +86,18 @@ async function onRevoke() {
         return;
     }
 
+    const adminUserId = resolveSessionUser()?.userId;
+    if (!adminUserId) {
+        errorMessage.value = 'Khong tim thay admin session. Vui long dang nhap lai.';
+        return;
+    }
+
     try {
         busy.value = true;
         errorMessage.value = '';
         const result = await revokeCertificate(route.params.certificateId, {
             reason: revokeReason.value.trim(),
-            revokedBy: resolveSessionUser()?.email || ''
+            revokedBy: adminUserId
         });
         const status = String(result?.status || '').toLowerCase();
         actionMessage.value = status === 'revoked' ? 'Revoke thanh cong.' : 'Da gui yeu cau revoke thanh cong.';
@@ -114,6 +127,7 @@ async function onRevoke() {
 
                 <div class="grid grid-cols-12 gap-3">
                     <div class="col-span-12 md:col-span-6"><strong>Student:</strong> {{ cert.studentName }}</div>
+                    <div class="col-span-12 md:col-span-6"><strong>Student Code:</strong> {{ cert.studentCode || 'N/A' }}</div>
                     <div class="col-span-12 md:col-span-6"><strong>Class:</strong> {{ cert.className }}</div>
                     <div class="col-span-12 md:col-span-6"><strong>Course:</strong> {{ cert.courseCode }} - {{ cert.courseName }}</div>
                     <div class="col-span-12 md:col-span-6"><strong>Average Score:</strong> {{ cert.averageScore }}</div>
@@ -167,7 +181,7 @@ async function onRevoke() {
                         <span class="truncate">{{ shortenMiddle(cert.blockchainInfo.transactionHash) }}</span>
                         <Button icon="pi pi-eye" size="small" text rounded @click="openDetail('Transaction Hash', cert.blockchainInfo.transactionHash)" />
                     </div>
-                    <div class="mb-2"><strong>Block:</strong> {{ cert.blockchainInfo.blockNumber }}</div>
+                    <div class="mb-2"><strong>Block:</strong> {{ displayOrNA(cert.blockchainInfo.blockNumber) }}</div>
                     <div class="mb-2 flex items-center gap-2 min-w-0">
                         <strong>Contract:</strong>
                         <span class="truncate">{{ shortenMiddle(cert.blockchainInfo.contractAddress) }}</span>
