@@ -247,6 +247,12 @@ const router = createRouter({
             component: () => import('@/views/pages/auth/Error.vue')
         },
         {
+            path: '/public/certificate-verification',
+            name: 'certificateVerification',
+            component: () => import('@/views/pages/public/CertificateVerification.vue'),
+            meta: { guestOnly: true }
+        },
+        {
             path: '/:pathMatch(.*)*',
             redirect: '/pages/notfound'
         }

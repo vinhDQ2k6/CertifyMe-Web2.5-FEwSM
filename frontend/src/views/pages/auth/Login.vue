@@ -2,9 +2,12 @@
 import { buildGoogleOAuthUrl } from '@/mock/auth';
 import FloatingConfigurator from '@/components/FloatingConfigurator.vue';
 import { ref } from 'vue';
+import { useRouter } from 'vue-router';
 
+const router = useRouter();
 const isLoading = ref(false);
 const errorMessage = ref('');
+const searchQuery = ref('');
 
 function loginWithGoogle() {
     isLoading.value = true;
@@ -15,6 +18,15 @@ function loginWithGoogle() {
     } catch (_error) {
         isLoading.value = false;
         errorMessage.value = 'Khong the ket noi OAuth endpoint. Vui long kiem tra VITE_API_BASE_URL.';
+    }
+}
+
+function goToCertificateVerification() {
+    if (searchQuery.value.trim()) {
+        router.push({
+            name: 'certificateVerification',
+            query: { search: searchQuery.value }
+        });
     }
 }
 </script>
@@ -48,6 +60,30 @@ function loginWithGoogle() {
                     </div>
 
                     <div class="w-full md:w-120">
+                        <!-- Certificate Verification Search -->
+                        <div class="mb-4">
+                            <label class="block text-xs font-medium text-muted-color uppercase mb-2">Xác minh chứng chỉ</label>
+                            <div class="flex gap-2">
+                                <InputGroup class="flex-1">
+                                    <InputText
+                                        v-model="searchQuery"
+                                        placeholder="Mã học sinh..."
+                                        @keyup.enter="goToCertificateVerification"
+                                    />
+                                </InputGroup>
+                                <Button
+                                    icon="pi pi-search"
+                                    @click="goToCertificateVerification"
+                                    class="w-auto"
+                                    title="Tìm kiếm chứng chỉ"
+                                />
+                            </div>
+                        </div>
+
+                        <!-- Divider -->
+                        <Divider class="my-4">hoặc</Divider>
+
+                        <!-- Login Button -->
                         <Button icon="pi pi-google" label="Login with Google" class="w-full mb-2" :loading="isLoading" @click="loginWithGoogle" />
                         <div class="text-sm text-color-secondary">OAuth endpoint: /oauth2/authorization/google</div>
 
