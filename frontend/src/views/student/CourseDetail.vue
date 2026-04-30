@@ -1,8 +1,8 @@
 <script setup>
 import { resolveSessionUser } from '@/mock/auth';
 import { getApiErrorMessage } from '@/service/apiClient';
-import { getClassQuizzes, getCourseDetail, issueStudentCertificate } from '@/service/studentApi';
-import { computed, onMounted, ref, watch } from 'vue';
+import { getClassQuizzes, getCourseDetail, getStudentCertificates, issueStudentCertificate } from '@/service/studentApi';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 const route = useRoute();
@@ -18,6 +18,13 @@ const detailTitle = ref('');
 const detailValue = ref('');
 const issuingCertificate = ref(false);
 const issueMessage = ref('');
+const waitingDialogVisible = ref(false);
+const waitingForCertificate = ref(false);
+const pollingAttempt = ref(0);
+const waitingMessage = ref('Dang tao chung chi. He thong se tu dong kiem tra ket qua moi 5 giay...');
+
+let pollTimerId = null;
+let pollingActive = false;
 
 function shortenMiddle(value, head = 10, tail = 8) {
     const text = value == null ? '' : String(value);
@@ -169,7 +176,7 @@ const isCourseCompleted = computed(() => {
 });
 
 const canIssueCertificate = computed(() => {
-    return isCourseCompleted.value && !certificateInfo.value && !issuingCertificate.value;
+    return isCourseCompleted.value && !certificateInfo.value && !issuingCertificate.value && !waitingForCertificate.value;
 });
 
 const blockDisplay = computed(() => {
@@ -197,24 +204,84 @@ async function onIssueCertificate() {
     try {
         issuingCertificate.value = true;
         issueMessage.value = '';
-        const issued = await issueStudentCertificate(user.userId, classId);
-
-        if (course.value) {
-            course.value = {
-                ...course.value,
-                certificate: {
-                    verificationHash: issued?.verificationHash || '',
-                    blockchainInfo: issued?.blockchainInfo || null
-                }
-            };
-        }
-
-        issueMessage.value = 'Cap chung chi thanh cong. Du lieu blockchain da duoc cap nhat.';
+        await issueStudentCertificate(user.userId, classId);
+        startCertificatePolling(user.userId, classId);
     } catch (error) {
         issueMessage.value = getApiErrorMessage(error, 'Cap chung chi that bai. Vui long thu lai.');
     } finally {
         issuingCertificate.value = false;
     }
+}
+
+function clearPollTimer() {
+    if (pollTimerId) {
+        clearTimeout(pollTimerId);
+        pollTimerId = null;
+    }
+}
+
+function stopCertificatePolling() {
+    pollingActive = false;
+    clearPollTimer();
+    waitingForCertificate.value = false;
+    waitingDialogVisible.value = false;
+}
+
+function findIssuedCertificate(certificates, classId) {
+    if (!Array.isArray(certificates) || !certificates.length) {
+        return null;
+    }
+
+    return (
+        certificates.find((item) => String(item?.classId || '') === String(classId) && String(item?.status || '').toLowerCase() === 'issued') ||
+        certificates.find((item) => String(item?.classId || '') === String(classId)) ||
+        null
+    );
+}
+
+async function pollForCertificate(studentId, classId) {
+    if (!pollingActive) {
+        return;
+    }
+
+    pollingAttempt.value += 1;
+
+    try {
+        const certificates = await getStudentCertificates(studentId);
+        const issuedCertificate = findIssuedCertificate(certificates, classId);
+
+        if (issuedCertificate) {
+            if (course.value) {
+                course.value = {
+                    ...course.value,
+                    certificate: issuedCertificate
+                };
+            }
+
+            issueMessage.value = 'Da lay duoc chung chi. Thong tin chung chi da duoc cap nhat.';
+            stopCertificatePolling();
+            return;
+        }
+
+        waitingMessage.value = `Dang cho cap chung chi... Lan kiem tra #${pollingAttempt.value}.`; 
+    } catch (_error) {
+        waitingMessage.value = `Tam thoi chua lay duoc chung chi (lan #${pollingAttempt.value}). He thong se thu lai sau 5 giay...`;
+    }
+
+    clearPollTimer();
+    pollTimerId = setTimeout(() => {
+        pollForCertificate(studentId, classId);
+    }, 5000);
+}
+
+function startCertificatePolling(studentId, classId) {
+    stopCertificatePolling();
+    pollingActive = true;
+    pollingAttempt.value = 0;
+    waitingForCertificate.value = true;
+    waitingDialogVisible.value = true;
+    waitingMessage.value = 'Dang tao chung chi. He thong se tu dong kiem tra ket qua moi 5 giay...';
+    pollForCertificate(studentId, classId);
 }
 
 async function loadClassQuizzes(classId) {
@@ -256,6 +323,10 @@ watch(selectedClassId, async (newClassId, oldClassId) => {
         return;
     }
     await loadClassQuizzes(newClassId);
+});
+
+onUnmounted(() => {
+    stopCertificatePolling();
 });
 </script>
 
@@ -368,6 +439,9 @@ watch(selectedClassId, async (newClassId, oldClassId) => {
                         />
                         <small v-if="!effectiveClassId" class="text-orange-500">Khong tim thay classId trong response hien tai.</small>
                     </div>
+                    <div v-if="waitingForCertificate" class="mb-3 text-sm text-blue-600">
+                        <i class="pi pi-spin pi-spinner mr-2"></i>Dang doi cap chung chi... He thong dang polling du lieu.
+                    </div>
                     <Message v-if="issueMessage" class="mb-3" :severity="certificateInfo ? 'success' : 'warn'">{{ issueMessage }}</Message>
                     <Button label="My Certificates" class="w-full" severity="secondary" as="router-link" to="/student/certificates" />
                 </div>
@@ -375,6 +449,17 @@ watch(selectedClassId, async (newClassId, oldClassId) => {
 
             <Dialog v-model:visible="detailDialogVisible" modal :header="detailTitle" :style="{ width: '70vw', maxWidth: '980px' }">
                 <div class="text-sm break-all">{{ detailValue }}</div>
+            </Dialog>
+
+            <Dialog v-model:visible="waitingDialogVisible" modal :closable="false" :draggable="false" :style="{ width: '28rem' }" header="Dang cap chung chi">
+                <div class="flex items-start gap-3">
+                    <i class="pi pi-spin pi-spinner text-2xl text-primary"></i>
+                    <div class="text-sm leading-6">
+                        <div class="font-semibold mb-1">Vui long cho trong giay lat</div>
+                        <div>{{ waitingMessage }}</div>
+                        <div class="text-color-secondary mt-2">So lan kiem tra: {{ pollingAttempt }}</div>
+                    </div>
+                </div>
             </Dialog>
         </template>
 
